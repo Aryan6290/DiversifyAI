@@ -1,0 +1,9 @@
+Asset Name,Ticker,Asset Type,Sector,Current Value,Currency
+Microsoft Corp.,MSFT,Equity,Technology,6000,USD
+Johnson & Johnson,JNJ,Equity,Healthcare,6000,USD
+JPMorgan Chase & Co.,JPM,Equity,Financials,6000,USD
+Procter & Gamble Co.,PG,Equity,Consumer Staples,6000,USD
+Chevron Corp.,CVX,Equity,Energy,6000,USD
+Vanguard S&P 500 ETF,VOO,Equity,Large Cap Blend,12000,USD
+iShares Core U.S. Aggregate Bond ETF,AGG,Fixed Income,Fixed Income,12000,USD
+USD Cash,USD,Cash,Cash/Other,6000,USD

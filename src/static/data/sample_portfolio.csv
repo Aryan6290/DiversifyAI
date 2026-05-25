@@ -1,0 +1,9 @@
+Asset Name,Ticker,Asset Type,Sector,Current Value,Currency
+Apple Inc.,AAPL,Equity,Technology,15000,USD
+Microsoft Corp.,MSFT,Equity,Technology,12000,USD
+NVIDIA Corp.,NVDA,Equity,Technology,13000,USD
+Tesla Inc.,TSLA,Equity,Consumer Cyclical,5000,USD
+Vanguard S&P 500 ETF,VOO,Equity,Large Cap Blend,8000,USD
+iShares Core U.S. Aggregate Bond ETF,AGG,Fixed Income,Government/Corporate,4000,USD
+Bitcoin,BTC,Crypto,N/A,2500,USD
+USD Cash,USD,Cash,Cash/Other,1500,USD
