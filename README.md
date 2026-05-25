@@ -89,24 +89,25 @@ python src/main.py data/sample_portfolio.csv
 
 ---
 
-## Deployment Instructions
+## Usage Guide & Screenshots
 
-The easiest way to deploy this FastAPI application is using a Platform-as-a-Service (PaaS) like **Render** or **Railway**.
+The application provides a fully interactive dashboard to manage and analyze your portfolio. 
 
-### Deploying to Render (Recommended)
+### 1. Dashboard Overview
+When you start the application, you'll be greeted with the main dashboard. Here, you can view your total assets, allocation breakdown, and holdings table.
 
-1. Push this project to a GitHub repository.
-2. Sign up for a free account at [Render.com](https://render.com/).
-3. Click **New +** and select **Web Service**.
-4. Connect your GitHub repository.
-5. Configure the service with the following settings:
-   - **Environment:** `Python 3`
-   - **Build Command:** `pip install -r requirements.txt`
-   - **Start Command:** `uvicorn src.app:app --host 0.0.0.0 --port $PORT`
-6. Click **Advanced** and add your Environment Variables (e.g., `OPENAI_API_KEY`, `GEMINI_API_KEY`).
-7. Click **Create Web Service**.
+![Dashboard Overview](assets/dashboard_overview.png)
 
-Render will automatically build and deploy your app. Once finished, you will receive a public URL (e.g., `https://diversifyai.onrender.com`).
+### 2. Connect Broker or Upload CSV
+You have two ways to import your portfolio:
+- **Broker Integration:** Click on **"Connect Upstox"** to securely authenticate and fetch your live holdings.
+- **CSV Upload:** Drag and drop your `sample_portfolio.csv` into the analyze panel.
 
-### Note on Dependencies
-The application relies on `yfinance` to fetch live market data, which works perfectly in cloud environments without requiring an API key. Ensure `yfinance` is included in your `requirements.txt`.
+### 3. AI Analysis & Health Scores
+Once your holdings are loaded, the application will compute your overall **Health Score** and **Risk Score**. The backend will then consult the AI model to generate an **Executive Summary**, highlight **Top Risks**, and outline **Positive Aspects**.
+
+![Dashboard Analysis](assets/dashboard_analysis.png)
+
+### 4. What-If Scenarios & Chat
+- Scroll down to try the **What-If Simulation** to see how adding new stocks affects your overall portfolio diversification.
+- Use the **AI Chat** interface to ask customized questions about your investments directly to the LLM (e.g., "Which of my stocks has the highest beta?").
