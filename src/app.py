@@ -339,6 +339,13 @@ async def chat_endpoint(
     except Exception as e:
         return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
+@app.get("/kaithhealthcheck")
+@app.get("/kaithheathcheck")
+async def healthcheck():
+    """Health check endpoint for Leapcell."""
+    return JSONResponse(content={"status": "ok"})
+
+
 # Mount static files directory
 static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 os.makedirs(static_dir, exist_ok=True)
