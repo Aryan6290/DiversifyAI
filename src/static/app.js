@@ -1,474 +1,284 @@
-/* ==========================================
-   Client-Side Controller - DiversifyAI
-   ========================================== */
+import React, { useState, useEffect, useRef, createContext, useContext } from 'react';
+import { createRoot } from 'react-dom/client';
+import htm from 'htm';
+import Chart from 'chart.js';
 
-document.addEventListener("DOMContentLoaded", () => {
-    // DOM Elements
-    const dropzone = document.getElementById("dropzone");
-    const fileInput = document.getElementById("file-input");
-    const fileInfo = document.getElementById("file-info");
-    const fileNameDisplay = document.getElementById("file-name");
-    const removeFileBtn = document.getElementById("remove-file");
-    const analyzeBtn = document.getElementById("analyze-btn");
-    const btnSpinner = document.getElementById("btn-spinner");
-    const customApiKeyInput = document.getElementById("custom-api-key");
-    const modelInput = document.getElementById("model-input");
-    const btnUpstox = document.getElementById("btn-upstox");
-    
-    // Cards to show/hide
-    const welcomeCard = document.getElementById("welcome-card");
-    const metricsCard = document.getElementById("metrics-card");
-    const chartsCard = document.getElementById("charts-card");
-    const reportCard = document.getElementById("report-card");
-    const holdingsCard = document.getElementById("holdings-card");
-    const aiSummaryCard = document.getElementById("ai-summary-card");
-    const risksCard = document.getElementById("risks-card");
-    const whatifCard = document.getElementById("whatif-card");
-    const chatCard = document.getElementById("chat-card");
-    
-    // Data display fields
-    const totalAssetsVal = document.getElementById("total-assets-val");
-    const assetsCountBadge = document.getElementById("assets-count-badge");
-    const healthScoreVal = document.getElementById("health-score-val");
-    const riskScoreVal = document.getElementById("risk-score-val");
-    const benchmarkVal = document.getElementById("benchmark-val");
-    
-    const aiExecSummary = document.getElementById("ai-exec-summary");
-    const topRisksList = document.getElementById("top-risks-list");
-    const positiveAspectsList = document.getElementById("positive-aspects-list");
-    
-    const reportContent = document.getElementById("report-content");
-    const holdingsTableBody = document.querySelector("#holdings-table tbody");
-    
-    // Chat & What-If Elements
-    const chatInput = document.getElementById("chat-input");
-    const chatBtn = document.getElementById("chat-btn");
-    const chatHistory = document.getElementById("chat-history");
-    const whatifTicker = document.getElementById("whatif-ticker");
-    const whatifAmount = document.getElementById("whatif-amount");
-    const whatifBtn = document.getElementById("whatif-btn");
-    
-    // Tab switching
-    const tabButtons = document.querySelectorAll(".tab-btn");
-    const tabPanels = document.querySelectorAll(".tab-panel");
+// Initialize htm with React's element factory
+const html = htm.bind(React.createElement);
 
-    // State Variables
-    let selectedFile = null;
-    let chartInstances = {};
-    let rawHoldings = [];
-    let chatMessages = [];
+// --- 1. AUTHENTICATION CONTEXT ---
+const AuthContext = createContext(null);
 
-    // Drag & Drop
-    dropzone.addEventListener("click", (e) => {
-        if (e.target.closest("#remove-file")) return;
-        fileInput.click();
-    });
+function AuthProvider({ children }) {
+    const [user, setUser] = useState(null);
+    const [loading, setLoading] = useState(true);
 
-    fileInput.addEventListener("change", (e) => {
-        if (e.target.files.length > 0) handleFileSelection(e.target.files[0]);
-    });
-
-    ["dragenter", "dragover"].forEach(eventName => {
-        dropzone.addEventListener(eventName, (e) => { e.preventDefault(); e.stopPropagation(); dropzone.classList.add("active"); }, false);
-    });
-
-    ["dragleave", "drop"].forEach(eventName => {
-        dropzone.addEventListener(eventName, (e) => { e.preventDefault(); e.stopPropagation(); dropzone.classList.remove("active"); }, false);
-    });
-
-    dropzone.addEventListener("drop", (e) => {
-        if (e.dataTransfer.files.length > 0) handleFileSelection(e.dataTransfer.files[0]);
-    });
-
-    function handleFileSelection(file) {
-        if (!file.name.endsWith(".csv")) { alert("Please select a valid CSV."); return; }
-        selectedFile = file;
-        fileNameDisplay.textContent = file.name;
-        fileInfo.classList.remove("hidden");
-        analyzeBtn.disabled = false;
-        dropzone.querySelector(".dropzone-content").classList.add("hidden");
-    }
-
-    removeFileBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        selectedFile = null;
-        fileInput.value = "";
-        fileInfo.classList.add("hidden");
-        analyzeBtn.disabled = true;
-        dropzone.querySelector(".dropzone-content").classList.remove("hidden");
-    });
-
-    // Tabs
-    tabButtons.forEach(btn => {
-        btn.addEventListener("click", () => {
-            const targetPanel = btn.getAttribute("data-tab");
-            tabButtons.forEach(b => b.classList.remove("active"));
-            btn.classList.add("active");
-            tabPanels.forEach(panel => {
-                if (panel.id === targetPanel) panel.classList.add("active");
-                else panel.classList.remove("active");
-            });
-        });
-    });
-
-    // API Analysis
-    analyzeBtn.addEventListener("click", async () => {
-        if (!selectedFile) return;
-        analyzeBtn.disabled = true;
-        btnSpinner.classList.remove("hidden");
-        
-        const formData = new FormData();
-        formData.append("file", selectedFile);
-        
-        await performAnalysis("/api/analyze", { method: "POST", body: formData });
-    });
-
-    if (btnUpstox) {
-        btnUpstox.addEventListener("click", async () => {
-            const customKey = customApiKeyInput.value.trim();
-            if (!customKey) {
-                alert("Please enter your API Key before connecting to the broker.");
-                return;
-            }
-            
-            try {
-                const btnOriginalText = btnUpstox.innerText;
-                btnUpstox.innerText = "Connecting...";
-                btnUpstox.disabled = true;
-
-                // Open Upstox Login in a popup synchronously to avoid popup blocker
-                const popup = window.open('', 'UpstoxLogin', 'width=600,height=700,status=yes,scrollbars=yes');
-                if (popup) {
-                    popup.document.write("<h2 style='font-family: sans-serif; text-align: center; margin-top: 50px;'>Loading Upstox login...</h2>");
-                }
-
-                const res = await fetch("/api/auth/upstox/login");
+    const fetchMe = async () => {
+        try {
+            const res = await fetch('/api/auth/me');
+            if (res.ok) {
                 const data = await res.json();
-                
-                if (!data.success) {
-                    if (popup) popup.close();
-                    throw new Error(data.error);
-                }
-
-                if (popup) {
-                    popup.location.href = data.login_url;
-                }
-                
-                // Listen for success message from popup
-                const messageHandler = (event) => {
-                    if (!event.origin.includes("localhost") && !event.origin.includes("127.0.0.1")) return;
-
-                    const result = event.data;
-                    if (result && typeof result.success !== 'undefined') {
-                        window.removeEventListener('message', messageHandler);
-                        btnUpstox.innerText = btnOriginalText;
-                        btnUpstox.disabled = false;
-
-                        if (result.success) {
-                            if (result.is_raw_holdings) {
-                                btnUpstox.innerText = "Analyzing...";
-                                btnUpstox.disabled = true;
-                                btnSpinner.classList.remove("hidden");
-                                
-                                const selectedModel = modelInput.value.trim();
-                                const cleanApiKey = customApiKeyInput.value.trim().replace(/[^\x00-\x7F]/g, "");
-                                
-                                fetch("/api/analyze_holdings", {
-                                    method: "POST",
-                                    headers: {
-                                        "Content-Type": "application/json",
-                                        "X-Model": selectedModel,
-                                        "X-API-Key": cleanApiKey
-                                    },
-                                    body: JSON.stringify({ holdings: result.holdings })
-                                })
-                                .then(res => res.json())
-                                .then(analysisResult => {
-                                    btnUpstox.innerText = btnOriginalText;
-                                    btnUpstox.disabled = false;
-                                    btnSpinner.classList.add("hidden");
-                                    
-                                    if (!analysisResult.success) {
-                                        alert(`⚠️ Analysis Error: ${analysisResult.error}`);
-                                        return;
-                                    }
-                                    
-                                    // Success Transition
-                                    welcomeCard.classList.add("hidden");
-                                    metricsCard.classList.remove("hidden");
-                                    chartsCard.classList.remove("hidden");
-                                    reportCard.classList.remove("hidden");
-                                    holdingsCard.classList.remove("hidden");
-                                    aiSummaryCard.classList.remove("hidden");
-                                    risksCard.classList.remove("hidden");
-                                    whatifCard.classList.remove("hidden");
-                                    chatCard.classList.remove("hidden");
-
-                                    rawHoldings = analysisResult.assets;
-                                    renderMetrics(analysisResult);
-                                    renderCharts(analysisResult);
-                                    renderHoldingsTable(analysisResult.assets);
-                                    renderAIReport(analysisResult.report);
-                                })
-                                .catch(err => {
-                                    console.error(err);
-                                    alert(`⚠️ Failed to analyze holdings: ${err.message}`);
-                                    btnUpstox.innerText = btnOriginalText;
-                                    btnUpstox.disabled = false;
-                                    btnSpinner.classList.add("hidden");
-                                });
-                            }
-                        } else {
-                            alert(`⚠️ Upstox Connect Error: ${result.error}`);
-                        }
-                    }
-                };
-                
-                window.addEventListener('message', messageHandler);
-
-                const checkPopup = setInterval(() => {
-                    if (popup.closed) {
-                        clearInterval(checkPopup);
-                        window.removeEventListener('message', messageHandler);
-                        btnUpstox.innerText = btnOriginalText;
-                        btnUpstox.disabled = false;
-                    }
-                }, 1000);
-
-            } catch (err) {
-                console.error(err);
-                alert(`⚠️ Failed to init Upstox login: ${err.message}`);
-                btnUpstox.innerText = "Connect Upstox";
-                btnUpstox.disabled = false;
+                setUser(data);
+            } else {
+                setUser(null);
             }
-        });
-    }
+        } catch (e) {
+            setUser(null);
+        } finally {
+            setLoading(false);
+        }
+    };
 
-    
-    // What-If Simulation
-    whatifBtn.addEventListener("click", async () => {
-        const ticker = whatifTicker.value.trim();
-        const amount = parseFloat(whatifAmount.value.trim());
-        
-        if (!ticker || isNaN(amount) || amount <= 0) {
-            alert("Please enter a valid ticker and amount.");
+    useEffect(() => {
+        fetchMe();
+    }, []);
+
+    const login = async (email, password) => {
+        const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Login failed.');
+        await fetchMe();
+        return data;
+    };
+
+    const signup = async (email, password) => {
+        const res = await fetch('/api/auth/signup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Signup failed.');
+        return data;
+    };
+
+    const logout = async () => {
+        await fetch('/api/auth/logout', { method: 'POST' });
+        setUser(null);
+    };
+
+    return html`
+        <${AuthContext.Provider} value=${{ user, loading, login, signup, logout, refreshUser: fetchMe }}>
+            ${children}
+        </${AuthContext.Provider}>
+    `;
+}
+
+const useAuth = () => useContext(AuthContext);
+
+// --- 2. GLASSMORPHIC AUTH SCREEN ---
+function AuthScreen() {
+    const { login, signup } = useAuth();
+    const [isLogin, setIsLogin] = useState(true);
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState('');
+    const [loading, setLoading] = useState(false);
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setError('');
+        if (!email.includes('@')) {
+            setError('Please enter a valid email address.');
             return;
         }
-        
-        whatifBtn.disabled = true;
-        whatifBtn.textContent = "Running...";
-        
-        // Clone current holdings and append mock row
-        const mockHoldings = JSON.parse(JSON.stringify(rawHoldings));
-        mockHoldings.push({
-            "Asset Name": "Simulated " + ticker,
-            "Ticker": ticker,
-            "Asset Type": "Equity",
-            "Sector": "Unclassified",
-            "Current Value": amount,
-            "Currency": "USD"
-        });
-        
-        await performAnalysis("/api/analyze_holdings", {
-            method: "POST",
-            body: JSON.stringify({ holdings: mockHoldings })
-        });
-        
-        whatifBtn.disabled = false;
-        whatifBtn.textContent = "Simulate";
+        if (password.length < 6) {
+            setError('Password must be at least 6 characters.');
+            return;
+        }
+
+        setLoading(true);
+        try {
+            if (isLogin) {
+                await login(email, password);
+            } else {
+                const data = await signup(email, password);
+                alert(data.message);
+                setIsLogin(true);
+                setPassword('');
+            }
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return html`
+        <div className="auth-container">
+            <div className="auth-card">
+                <span className="auth-logo">🚀</span>
+                <h2>${isLogin ? 'Welcome Back' : 'Create Account'}</h2>
+                <p className="auth-subtitle">
+                    ${isLogin ? 'Sign in to access your AI portfolio insights' : 'Get started with autonomous daily advisor alerts'}
+                </p>
+
+                <form className="auth-form" onSubmit=${handleSubmit}>
+                    <div className="auth-input-group">
+                        <label>Email Address</label>
+                        <input 
+                            type="email" 
+                            placeholder="you@example.com" 
+                            value=${email} 
+                            onChange=${(e) => setEmail(e.target.value)} 
+                            required 
+                            disabled=${loading}
+                        />
+                    </div>
+                    
+                    <div className="auth-input-group">
+                        <label>Password</label>
+                        <input 
+                            type="password" 
+                            placeholder="••••••••" 
+                            value=${password} 
+                            onChange=${(e) => setPassword(e.target.value)} 
+                            required 
+                            disabled=${loading}
+                        />
+                    </div>
+
+                    ${error && html`<div className="auth-error">${error}</div>`}
+
+                    <button type="submit" className="btn btn-primary" disabled=${loading}>
+                        <span>${loading ? 'Processing...' : isLogin ? 'Sign In' : 'Sign Up'}</span>
+                        ${loading && html`<div className="spinner"></div>`}
+                    </button>
+                </form>
+
+                <div className="auth-switch">
+                    ${isLogin ? "Don't have an account?" : 'Already have an account?'}
+                    <button className="auth-switch-btn" onClick=${() => { setIsLogin(!isLogin); setError(''); }} disabled=${loading}>
+                        ${isLogin ? 'Sign Up' : 'Sign In'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// --- 3. PREMIUM PORTFOLIO DASHBOARD ---
+function Dashboard() {
+    const { user, logout, refreshUser } = useAuth();
+    
+    // Model Selection & API configuration
+    const [model, setModel] = useState('gpt-4o-mini');
+    const [customApiKey, setCustomApiKey] = useState(() => {
+        return localStorage.getItem('diversify_ai_custom_api_key') || '';
     });
     
-    // Chat Interface
-    chatBtn.addEventListener("click", async () => {
-        const msg = chatInput.value.trim();
-        if (!msg) return;
-        
-        // Add user msg to UI
-        appendChatMessage(msg, "user");
-        chatInput.value = "";
-        
-        chatBtn.disabled = true;
-        chatBtn.textContent = "...";
-        
+    useEffect(() => {
+        if (customApiKey) {
+            localStorage.setItem('diversify_ai_custom_api_key', customApiKey);
+        } else {
+            localStorage.removeItem('diversify_ai_custom_api_key');
+        }
+    }, [customApiKey]);
+    
+    // File inputs & stateful analytical results
+    const [selectedFile, setSelectedFile] = useState(null);
+    const [dragActive, setDragActive] = useState(false);
+    const [analyzing, setAnalyzing] = useState(false);
+    const [result, setResult] = useState(null);
+    const [password, setPassword] = useState('');
+    const [holdingsTab, setHoldingsTab] = useState('all');
+    
+    // What-if state
+    const [whatIfTicker, setWhatIfTicker] = useState('');
+    const [whatIfAmount, setWhatIfAmount] = useState('');
+    const [whatIfLoading, setWhatIfLoading] = useState(false);
+
+    // Chat widget state
+    const [chatMessage, setChatMessage] = useState('');
+    const [chatHistory, setChatHistory] = useState([
+        { sender: 'ai', text: "Hi! I'm your AI advisor. Try asking me: \"Which stock is riskiest?\" or \"How can I reduce volatility?\"" }
+    ]);
+    const [chatLoading, setChatLoading] = useState(false);
+
+    // Daily Alerts state
+    const [subEmail, setSubEmail] = useState(user.email);
+    const [subStatus, setSubStatus] = useState('');
+    const [subStatusColor, setSubStatusColor] = useState('#94a3b8');
+    const [subActive, setSubActive] = useState(user.is_subscribed);
+    const [alertsLoading, setAlertsLoading] = useState(false);
+
+    // Active chart tab panel
+    const [activeTab, setActiveTab] = useState('asset');
+    const chartRefs = {
+        asset: useRef(null),
+        sector: useRef(null),
+        mcap: useRef(null),
+        risk: useRef(null)
+    };
+    const chartInstances = useRef({});
+    const hasLoadedInitial = useRef(false);
+
+    // Load saved portfolio holdings on mount if user already has one!
+    useEffect(() => {
+        if (user.holdings && user.holdings.length > 0 && !hasLoadedInitial.current) {
+            hasLoadedInitial.current = true;
+            triggerAnalyzeHoldings(user.holdings);
+        }
+    }, [user.holdings]);
+
+    // Handle Upstox OAuth Message callback
+    useEffect(() => {
+        const handleOauthMessage = (event) => {
+            const data = event.data;
+            if (data && data.success && data.is_raw_holdings) {
+                triggerAnalyzeHoldings(data.holdings);
+            } else if (data && !data.success && data.error) {
+                alert(`Broker connection failed: ${data.error}`);
+            }
+        };
+
+        window.addEventListener('message', handleOauthMessage);
+        return () => window.removeEventListener('message', handleOauthMessage);
+    }, []);
+
+    // Render interactive charts when result or tab panel changes
+    useEffect(() => {
+        if (!result) return;
+        renderTabCharts();
+    }, [result, activeTab]);
+
+    const getHeaders = () => {
+        const headers = {};
+        if (model) headers['X-Model'] = model;
+        if (customApiKey) headers['X-API-Key'] = customApiKey;
+        return headers;
+    };
+
+    const triggerAnalyzeHoldings = async (holdings) => {
+        setAnalyzing(true);
         try {
-            const headers = getHeaders();
-            headers["Content-Type"] = "application/json";
-            
-            const res = await fetch("/api/chat", {
-                method: "POST",
-                headers: headers,
-                body: JSON.stringify({
-                    message: msg,
-                    history: chatMessages,
-                    holdings: rawHoldings
-                })
+            const res = await fetch('/api/analyze_holdings', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    ...getHeaders()
+                },
+                body: JSON.stringify({ holdings })
             });
             const data = await res.json();
             if (data.success) {
-                appendChatMessage(data.reply, "ai");
-                chatMessages.push({"role": "user", "content": msg});
-                chatMessages.push({"role": "assistant", "content": data.reply});
+                setResult(data);
             } else {
-                appendChatMessage("Error: " + data.error, "error");
+                alert(`Analysis failed: ${data.error}`);
             }
         } catch (e) {
-            appendChatMessage("Connection error.", "error");
+            alert('Failed to connect to analytics server.');
         } finally {
-            chatBtn.disabled = false;
-            chatBtn.textContent = "Send";
+            setAnalyzing(false);
         }
-    });
-    
-    function appendChatMessage(text, sender) {
-        const div = document.createElement("div");
-        div.className = `chat-msg ${sender}-msg`;
-        div.style.padding = "0.75rem 1rem";
-        div.style.borderRadius = "12px";
-        div.style.maxWidth = "80%";
-        
-        if (sender === "user") {
-            div.style.alignSelf = "flex-end";
-            div.style.background = "rgba(16,185,129,0.1)";
-            div.style.border = "1px solid rgba(16,185,129,0.2)";
-            div.style.borderBottomRightRadius = "4px";
-            div.style.color = "#a7f3d0";
-        } else {
-            div.style.alignSelf = "flex-start";
-            div.style.background = "rgba(59,130,246,0.1)";
-            div.style.border = "1px solid rgba(59,130,246,0.2)";
-            div.style.borderBottomLeftRadius = "4px";
-            div.style.color = "#e5e7eb";
-        }
-        
-        div.textContent = text;
-        chatHistory.appendChild(div);
-        chatHistory.scrollTop = chatHistory.scrollHeight;
-    }
+    };
 
-    function getHeaders() {
-        const customKey = customApiKeyInput.value.trim().replace(/[^\x00-\x7F]/g, "");
-        const selectedModel = modelInput.value.trim();
-        const headers = { "X-Model": selectedModel };
-        if (customKey) headers["X-API-Key"] = customKey;
-        return headers;
-    }
-
-    async function performAnalysis(endpoint, options) {
-        try {
-            options.headers = options.headers || {};
-            Object.assign(options.headers, getHeaders());
-            if (endpoint === "/api/analyze_holdings" && !options.headers["Content-Type"]) {
-                options.headers["Content-Type"] = "application/json";
-            }
-
-            const response = await fetch(endpoint, options);
-            const result = await response.json();
-
-            if (!response.ok || !result.success) throw new Error(result.error || "Failed to analyze.");
-
-            // Success Transition
-            welcomeCard.classList.add("hidden");
-            metricsCard.classList.remove("hidden");
-            chartsCard.classList.remove("hidden");
-            reportCard.classList.remove("hidden");
-            holdingsCard.classList.remove("hidden");
-            aiSummaryCard.classList.remove("hidden");
-            risksCard.classList.remove("hidden");
-            whatifCard.classList.remove("hidden");
-            chatCard.classList.remove("hidden");
-
-            rawHoldings = result.assets; // Store for what-if
-            renderMetrics(result);
-            renderCharts(result);
-            renderHoldingsTable(result.assets);
-            renderAIReport(result.report);
-
-        } catch (error) {
-            console.error(error);
-            alert(`⚠️ Error: ${error.message}`);
-        } finally {
-            analyzeBtn.disabled = false;
-            btnSpinner.classList.add("hidden");
-        }
-    }
-
-    function renderMetrics(data) {
-        totalAssetsVal.textContent = formatCurrency(data.total_value);
-        assetsCountBadge.textContent = `${data.assets.length} holdings`;
-        
-        // Render Scores (assuming report is structured JSON from new analyzer)
-        if (data.report && typeof data.report === 'object') {
-            const hs = data.report.health_score || data.calculated_health_score || 0;
-            const rs = data.report.risk_score || data.calculated_risk_score || 0;
-            
-            healthScoreVal.textContent = `${hs}/100`;
-            healthScoreVal.style.color = hs > 70 ? "#10b981" : (hs > 40 ? "#f59e0b" : "#f43f5e");
-            
-            riskScoreVal.textContent = `${rs}/10`;
-            riskScoreVal.style.color = rs > 7 ? "#f43f5e" : (rs > 4 ? "#f59e0b" : "#10b981");
-        }
-        
-        if (data.benchmark) {
-            benchmarkVal.textContent = `vs ${data.benchmark.benchmark_name}: ${data.benchmark.outperformance} outperformance`;
-        }
-    }
-
-    function renderAIReport(report) {
-        if (typeof report !== 'object') {
-            // Fallback if not JSON
-            reportContent.innerHTML = `<pre style="white-space:pre-wrap;">${escapeHTML(report)}</pre>`;
-            return;
-        }
-        
-        aiExecSummary.textContent = report.executive_summary || "Analysis complete.";
-        
-        topRisksList.innerHTML = "";
-        (report.top_risks || []).forEach(risk => {
-            const li = document.createElement("li");
-            li.textContent = risk;
-            topRisksList.appendChild(li);
-        });
-        
-        positiveAspectsList.innerHTML = "";
-        (report.positive_aspects || []).forEach(pos => {
-            const li = document.createElement("li");
-            li.textContent = pos;
-            positiveAspectsList.appendChild(li);
-        });
-        
-        reportContent.innerHTML = "";
-        (report.insights || []).forEach(insight => {
-            const div = document.createElement("div");
-            div.style.marginBottom = "1rem";
-            div.style.padding = "1rem";
-            div.style.borderRadius = "8px";
-            div.style.background = "rgba(255,255,255,0.03)";
-            div.style.borderLeft = `4px solid ${insight.type === 'warning' ? '#f43f5e' : (insight.type === 'positive' ? '#10b981' : '#3b82f6')}`;
-            
-            div.innerHTML = `
-                <h4 style="margin-bottom: 0.5rem; color: #fff;">${escapeHTML(insight.title)}</h4>
-                <p style="color: #9ca3af; font-size: 0.95rem; line-height: 1.5;">${escapeHTML(insight.description)}</p>
-            `;
-            reportContent.appendChild(div);
-        });
-    }
-
-    function renderHoldingsTable(assets) {
-        holdingsTableBody.innerHTML = "";
-        assets.forEach(asset => {
-            const row = document.createElement("tr");
-            row.innerHTML = `
-                <td><strong>${escapeHTML(asset["Asset Name"])}</strong></td>
-                <td><code style="background: rgba(255,255,255,0.06); padding: 0.2rem 0.4rem; border-radius: 4px;">${escapeHTML(asset["Ticker"])}</code></td>
-                <td>${escapeHTML(asset["Sector"])}</td>
-                <td class="text-right">${formatCurrency(asset["Current Value"])}</td>
-                <td class="text-right font-medium" style="color: var(--color-primary); font-weight:600;">${asset["Percentage"].toFixed(2)}%</td>
-            `;
-            holdingsTableBody.appendChild(row);
-        });
-    }
-
-    function renderCharts(data) {
+    // Chart.js renderer
+    const renderTabCharts = () => {
         const palettes = {
             base: ["#6366f1", "#a855f7", "#10b981", "#f59e0b", "#ec4899", "#06b6d4", "#3b82f6", "#f43f5e"],
             mcap: ["#3b82f6", "#8b5cf6", "#f43f5e"],
@@ -476,12 +286,16 @@ document.addEventListener("DOMContentLoaded", () => {
         };
 
         const createChart = (id, breakdown, labelCol, palette) => {
-            if (chartInstances[id]) chartInstances[id].destroy();
-            const ctx = document.getElementById(id).getContext("2d");
+            if (chartInstances.current[id]) {
+                chartInstances.current[id].destroy();
+            }
+            const canvas = document.getElementById(id);
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
             const labels = breakdown.map(item => item[labelCol]);
             const values = breakdown.map(item => item["Percentage"]);
-            
-            chartInstances[id] = new Chart(ctx, {
+
+            chartInstances.current[id] = new Chart(ctx, {
                 type: "doughnut",
                 data: {
                     labels: labels,
@@ -501,18 +315,896 @@ document.addEventListener("DOMContentLoaded", () => {
             });
         };
 
-        createChart("assetChart", data.asset_type_breakdown, "Asset Type", palettes.base);
-        createChart("sectorChart", data.sector_breakdown, "Sector", palettes.base.slice().reverse());
-        createChart("mcapChart", data.market_cap_breakdown, "MarketCapCategory", palettes.mcap);
-        createChart("riskChart", data.risk_breakdown, "RiskCategory", palettes.risk);
+        if (activeTab === 'asset' && result.asset_type_breakdown) {
+            createChart('assetChart', result.asset_type_breakdown, 'Asset Type', palettes.base);
+        } else if (activeTab === 'sector' && result.sector_breakdown) {
+            createChart('sectorChart', result.sector_breakdown, 'Sector', palettes.base.slice().reverse());
+        } else if (activeTab === 'mcap' && result.market_cap_breakdown) {
+            createChart('mcapChart', result.market_cap_breakdown, 'MarketCapCategory', palettes.mcap);
+        } else if (activeTab === 'risk' && result.risk_breakdown) {
+            createChart('riskChart', result.risk_breakdown, 'RiskCategory', palettes.risk);
+        }
+    };
+
+    // File Dropzone handlers
+    const handleDrag = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.type === 'dragenter' || e.type === 'dragover') {
+            setDragActive(true);
+        } else if (e.type === 'dragleave') {
+            setDragActive(false);
+        }
+    };
+
+    const handleDrop = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragActive(false);
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            const file = e.dataTransfer.files[0];
+            if (file.name.endsWith('.csv') || file.name.endsWith('.pdf')) {
+                setSelectedFile(file);
+                setPassword('');
+            } else {
+                alert('Only CSV and PDF files are supported!');
+            }
+        }
+    };
+
+    const handleFileChange = (e) => {
+        if (e.target.files && e.target.files[0]) {
+            setSelectedFile(e.target.files[0]);
+            setPassword('');
+        }
+    };
+
+    const handleAnalyzeClick = async () => {
+        if (!selectedFile) return;
+        setAnalyzing(true);
+        
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+
+        const isPdf = selectedFile.name.endsWith('.pdf');
+        if (isPdf) {
+            formData.append('password', password);
+        }
+
+        const endpoint = isPdf ? '/api/analyze/cas' : '/api/analyze';
+
+        try {
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: getHeaders(),
+                body: formData
+            });
+            const data = await res.json();
+            if (data.success) {
+                setResult(data);
+                refreshUser(); // Updates holdings inside user profile
+            } else {
+                alert(`Analysis failed: ${data.error}`);
+            }
+        } catch (e) {
+            alert('Failed to connect to backend.');
+        } finally {
+            setAnalyzing(false);
+        }
+    };
+
+    // Upstox popup trigger
+    const handleUpstoxConnect = async () => {
+        try {
+            const res = await fetch('/api/auth/upstox/login');
+            const data = await res.json();
+            if (data.success && data.login_url) {
+                const width = 600, height = 700;
+                const left = (window.innerWidth - width) / 2;
+                const top = (window.innerHeight - height) / 2;
+                window.open(
+                    data.login_url, 
+                    'Upstox Integration', 
+                    `width=${width},height=${height},left=${left},top=${top}`
+                );
+            } else {
+                alert(`OAuth Initiation failed: ${data.error}`);
+            }
+        } catch (e) {
+            alert('Failed to connect to auth server.');
+        }
+    };
+
+    // What-If Simulation Click
+    const handleWhatIfSimulate = async () => {
+        if (!whatIfTicker || !whatIfAmount) return;
+        setWhatIfLoading(true);
+        try {
+            const currentHoldings = result ? result.assets : [];
+            const simulatedHoldings = [
+                ...currentHoldings.map(h => ({
+                    'Asset Name': h['Asset Name'],
+                    'Ticker': h['Ticker'],
+                    'Asset Type': h['Asset Type'],
+                    'Sector': h['Sector'],
+                    'Current Value': h['Current Value'],
+                    'Currency': h['Currency'] || 'USD'
+                })),
+                {
+                    'Asset Name': whatIfTicker,
+                    'Ticker': whatIfTicker,
+                    'Asset Type': 'Equity', // Standard assumption
+                    'Sector': 'Technology',  // Standard assumption
+                    'Current Value': parseFloat(whatIfAmount),
+                    'Currency': 'USD'
+                }
+            ];
+
+            const res = await fetch('/api/analyze_holdings', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    ...getHeaders()
+                },
+                body: JSON.stringify({ holdings: simulatedHoldings })
+            });
+            const data = await res.json();
+            if (data.success) {
+                setResult(data);
+                alert(`Simulation completed! Simulated asset ${whatIfTicker} worth $${whatIfAmount} loaded.`);
+            } else {
+                alert(`Simulation failed: ${data.error}`);
+            }
+        } catch (e) {
+            alert('Simulation connection error.');
+        } finally {
+            setWhatIfLoading(false);
+            setWhatIfTicker('');
+            setWhatIfAmount('');
+        }
+    };
+
+    // Chat handler
+    const handleSendChat = async () => {
+        if (!chatMessage.trim()) return;
+        const msgText = chatMessage;
+        setChatMessage('');
+        setChatHistory(prev => [...prev, { sender: 'user', text: msgText }]);
+        setChatLoading(true);
+
+        try {
+            const res = await fetch('/api/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...getHeaders()
+                },
+                body: JSON.stringify({
+                    message: msgText,
+                    holdings: result ? result.assets : []
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                setChatHistory(prev => [...prev, { sender: 'ai', text: data.reply }]);
+            } else {
+                setChatHistory(prev => [...prev, { sender: 'ai', text: `Error: ${data.error}` }]);
+            }
+        } catch (e) {
+            setChatHistory(prev => [...prev, { sender: 'ai', text: 'Chat failed to connect to backend server.' }]);
+        } finally {
+            setChatLoading(false);
+        }
+    };
+
+    // Daily Alerts Actions
+    const handleSubscribe = async () => {
+        setAlertsLoading(true);
+        setSubStatus('Registering subscription...');
+        setSubStatusColor('#94a3b8');
+        try {
+            const res = await fetch('/api/subscriptions/subscribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    holdings: result ? result.assets : [],
+                    model: model,
+                    api_key: customApiKey
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                setSubStatus(data.message);
+                setSubStatusColor('#10b981');
+                setSubActive(true);
+            } else {
+                setSubStatus(`Error: ${data.error}`);
+                setSubStatusColor('#ef4444');
+            }
+        } catch (e) {
+            setSubStatus('Connection failed.');
+            setSubStatusColor('#ef4444');
+        } finally {
+            setAlertsLoading(false);
+        }
+    };
+
+    const handleUnsubscribe = async () => {
+        setAlertsLoading(true);
+        setSubStatus('Disabling alerts...');
+        setSubStatusColor('#94a3b8');
+        try {
+            const res = await fetch('/api/subscriptions/unsubscribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await res.json();
+            if (data.success) {
+                setSubStatus(data.message);
+                setSubStatusColor('#f43f5e');
+                setSubActive(false);
+            } else {
+                setSubStatus(`Error: ${data.error}`);
+                setSubStatusColor('#ef4444');
+            }
+        } catch (e) {
+            setSubStatus('Connection failed.');
+            setSubStatusColor('#ef4444');
+        } finally {
+            setAlertsLoading(false);
+        }
+    };
+
+    const handleTriggerTest = async () => {
+        setAlertsLoading(true);
+        setSubStatus('Aggregating headlines and invoking Gemini...');
+        setSubStatusColor('#94a3b8');
+        try {
+            const res = await fetch('/api/subscriptions/trigger_test', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...getHeaders()
+                },
+                body: JSON.stringify({ 
+                    holdings: result ? result.assets : [],
+                    model: model,
+                    api_key: customApiKey
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                setSubStatus(data.message);
+                setSubStatusColor('#10b981');
+                setSubActive(true);
+                if (data.report) {
+                    setResult(prev => ({ ...prev, report: data.report }));
+                }
+            } else {
+                setSubStatus(`Error: ${data.error}`);
+                setSubStatusColor('#ef4444');
+            }
+        } catch (e) {
+            setSubStatus('Connection failed.');
+            setSubStatusColor('#ef4444');
+        } finally {
+            setAlertsLoading(false);
+        }
+    };
+
+    const formatCurrency = (value) => {
+        return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2 }).format(value);
+    };
+
+    return html`
+        <div className="app-container">
+            <!-- Header section -->
+            <header className="app-header">
+                <div className="brand">
+                    <span className="logo-icon">🚀</span>
+                    <div className="brand-text">
+                        <h1>DiversifyAI</h1>
+                        <p>GenAI Portfolio Advisor</p>
+                    </div>
+                </div>
+                
+                <div className="api-key-config">
+                    <div className="input-row">
+                        <div className="input-group provider-group">
+                            <label>Model Name</label>
+                            <select value=${model} onChange=${(e) => setModel(e.target.value)}>
+                                <option value="gpt-4o-mini">GPT-4o Mini</option>
+                                <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                                <option value="llama-3.3-70b-versatile">Llama 3.3 70B (Groq)</option>
+                            </select>
+                        </div>
+                        <div className="input-group key-group">
+                            <label>API Key (Optional)</label>
+                            <input 
+                                type="password" 
+                                placeholder="Paste API Key here..." 
+                                value=${customApiKey}
+                                onChange=${(e) => setCustomApiKey(e.target.value)}
+                            />
+                        </div>
+                        
+                        <!-- Premium user sign-out -->
+                        <div style=${{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginLeft: '1rem', borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '1rem' }}>
+                            <span style=${{ fontSize: '0.75rem', color: '#9ca3af', fontWeight: '500' }}>${user.email}</span>
+                            <button className="btn btn-secondary btn-sm" onClick=${logout} style=${{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }}>Logout</button>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <main className="app-main">
+                <!-- Left panel -->
+                <section className="workspace-section control-panel">
+                    
+                    <!-- Upload holdings card -->
+                    <div className="glass-card upload-card">
+                        <h2>Analyze Portfolio</h2>
+                        <p className="card-subtitle">Upload your holdings in CSV or CDSL CAS PDF format to calculate distributions and invoke the AI Advisor.</p>
+                        
+                        <div 
+                            className=${`dropzone ${dragActive ? 'active' : ''}`}
+                            onDragEnter=${handleDrag}
+                            onDragOver=${handleDrag}
+                            onDragLeave=${handleDrag}
+                            onDrop=${handleDrop}
+                            onClick=${() => document.getElementById('react-file-input').click()}
+                        >
+                            <input 
+                                type="file" 
+                                id="react-file-input" 
+                                accept=".csv, .pdf" 
+                                className="hidden-file-input" 
+                                onChange=${handleFileChange}
+                            />
+                            
+                            ${!selectedFile ? html`
+                                <div className="dropzone-content">
+                                    <span className="upload-icon">📥</span>
+                                    <p className="dropzone-text"><strong className="highlight">Choose a file</strong> or drag it here</p>
+                                    <p className="dropzone-subtext">CSV or CDSL CAS PDF statements</p>
+                                </div>
+                            ` : html`
+                                <div className="file-info">
+                                    <span className="file-icon">📄</span>
+                                    <span className="file-name">${selectedFile.name}</span>
+                                    <button className="remove-file-btn" onClick=${(e) => { e.stopPropagation(); setSelectedFile(null); }}>×</button>
+                                </div>
+                            `}
+                        </div>
+
+                        ${selectedFile && selectedFile.name.endsWith('.pdf') && html`
+                            <div className="input-group password-group" style=${{ marginTop: '0.25rem', marginBottom: '1.25rem', animation: 'fadeIn 0.3s ease-out' }}>
+                                <label style=${{ fontSize: '0.8rem', fontWeight: '600', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                    🔒 Enter PDF Password (PAN in Uppercase)
+                                </label>
+                                <input 
+                                    type="password" 
+                                    placeholder="Enter decryption password..." 
+                                    value=${password} 
+                                    onChange=${(e) => setPassword(e.target.value)} 
+                                    style=${{ 
+                                        width: '100%', 
+                                        padding: '0.75rem 1rem', 
+                                        borderRadius: '8px', 
+                                        background: 'rgba(0,0,0,0.25)', 
+                                        border: '1px solid rgba(255,255,255,0.1)', 
+                                        color: 'white', 
+                                        boxSizing: 'border-box', 
+                                        fontFamily: 'inherit',
+                                        fontSize: '0.85rem',
+                                        outline: 'none',
+                                    }}
+                                />
+                            </div>
+                        `}
+
+                        <button className="btn btn-primary" onClick=${handleAnalyzeClick} disabled=${!selectedFile || analyzing}>
+                            <span>${analyzing ? 'Analyzing holdings...' : 'Analyze Portfolio'}</span>
+                            ${analyzing && html`<div className="spinner"></div>`}
+                        </button>
+                        
+                        <div className="sample-download-note">
+                            <p>Test using our <a href="data/sample_portfolio.csv" download className="sample-link">sample_portfolio.csv</a></p>
+                        </div>
+
+                        <div className="broker-integrations" style=${{ marginTop: '2rem' }}>
+                            <h3 style=${{ fontSize: '1rem', marginBottom: '1rem', color: '#e5e7eb' }}>Or Import from Broker</h3>
+                            <div className="broker-buttons">
+                                <button className="btn btn-secondary" onClick=${handleUpstoxConnect} style=${{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(87,50,214,0.1)', borderColor: 'rgba(87,50,214,0.3)', color: '#5732d6', width: '100%' }}>
+                                    <span>Connect Upstox</span>
+                                    <img src="https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://upstox.com&size=64" alt="Upstox" style=${{ height: '20px', width: '20px', borderRadius: '4px' }} />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Daily Advisor Settings card (Visible when portfolio is loaded) -->
+                    ${result && html`
+                        <div className="glass-card" style=${{ marginTop: '0.25rem' }}>
+                            <h2 style=${{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.25rem' }}>
+                                <span>⏰</span> Daily Advisor Agent
+                            </h2>
+                            <p className="card-subtitle" style=${{ fontSize: '0.85rem', color: '#9ca3af', marginTop: '0.25rem', lineHeight: '1.4' }}>
+                                Aggregates stock news every morning, analyzes holdings risk via Gemini, and sends a styled HTML advisor report directly to your inbox.
+                            </p>
+                            
+                            <div style=${{ display: 'flex', flexDirection: 'column', gap: '0.85rem', marginTop: '1rem' }}>
+                                <div style=${{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                                    <label style=${{ fontSize: '0.8rem', fontWeight: 500, color: '#9ca3af' }}>Subscriber Email</label>
+                                    <input 
+                                        type="email" 
+                                        value=${subEmail}
+                                        onChange=${(e) => setSubEmail(e.target.value)}
+                                        disabled
+                                        style=${{ width: '100%', padding: '0.75rem 1rem', borderRadius: '8px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', boxSizing: 'border-box', fontFamily: 'inherit' }} 
+                                    />
+                                </div>
+                                <div style=${{ display: 'flex', gap: '0.75rem' }}>
+                                    <button className="btn btn-primary" onClick=${handleSubscribe} disabled=${alertsLoading} style=${{ flex: 1.2, padding: '0.75rem', fontSize: '0.9rem' }}>
+                                        ${alertsLoading ? 'Saving...' : 'Enable Alerts'}
+                                    </button>
+                                    <button className="btn btn-secondary" onClick=${handleTriggerTest} disabled=${alertsLoading} style=${{ flex: 1, padding: '0.75rem', fontSize: '0.9rem', whiteSpace: 'nowrap', borderColor: 'rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', color: '#cbd5e0' }}>
+                                        Test Mail
+                                    </button>
+                                </div>
+                                
+                                ${subActive && html`
+                                    <button className="btn" onClick=${handleUnsubscribe} disabled=${alertsLoading} style=${{ padding: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#ef4444', fontSize: '0.9rem', borderRadius: '8px', cursor: 'pointer', transition: 'background 0.2s' }}>
+                                        Disable Alerts
+                                    </button>
+                                `}
+                                
+                                ${subStatus && html`<div style=${{ fontSize: '0.8rem', textAlign: 'center', color: subStatusColor, fontWeight: '500' }}>${subStatus}</div>`}
+                            </div>
+                        </div>
+                    `}
+
+                    <!-- Interactive Metrics summary -->
+                    ${result && html`
+                        <div className="glass-card" style=${{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem', padding: '1.5rem' }}>
+                            <div className="metric-item">
+                                <span className="metric-label">Total Assets</span>
+                                <h3 style=${{ fontSize: '1.5rem', background: 'none', WebkitTextFillColor: 'initial', color: 'white' }}>${formatCurrency(result.total_value)}</h3>
+                                <span className="badge">${result.assets ? result.assets.length : 0} holdings</span>
+                            </div>
+                            <div className="metric-item">
+                                <span className="metric-label">Health Score</span>
+                                <h3 style=${{ fontSize: '1.5rem', background: 'none', WebkitTextFillColor: 'initial', color: '#10b981' }}>
+                                    ${result.report && result.report.health_score ? `${result.report.health_score}/100` : '--/100'}
+                                </h3>
+                                <span className="badge" style=${{ background: 'rgba(16,185,129,0.1)', color: '#10b981' }}>
+                                    vs NIFTY 50: ${result.benchmark && result.benchmark.nifty_comparison ? result.benchmark.nifty_comparison : 'Good'}
+                                </span>
+                            </div>
+                            <div className="metric-item">
+                                <span className="metric-label">Risk Score</span>
+                                <h3 style=${{ fontSize: '1.5rem', background: 'none', WebkitTextFillColor: 'initial', color: '#f43f5e' }}>
+                                    ${result.report && result.report.risk_score ? `${result.report.risk_score}/10` : '--/10'}
+                                </h3>
+                                <span className="badge" style=${{ background: 'rgba(244,63,94,0.1)', color: '#f43f5e' }}>Volatility Based</span>
+                            </div>
+                        </div>
+                    `}
+
+                    <!-- Stateful charts visualization -->
+                    ${result && html`
+                        <div className="glass-card charts-card">
+                            <div className="tabs-header">
+                                <button className=${`tab-btn ${activeTab === 'asset' ? 'active' : ''}`} onClick=${() => setActiveTab('asset')}>Asset Type</button>
+                                <button className=${`tab-btn ${activeTab === 'sector' ? 'active' : ''}`} onClick=${() => setActiveTab('sector')}>Sector</button>
+                                <button className=${`tab-btn ${activeTab === 'mcap' ? 'active' : ''}`} onClick=${() => setActiveTab('mcap')}>Market Cap</button>
+                                <button className=${`tab-btn ${activeTab === 'risk' ? 'active' : ''}`} onClick=${() => setActiveTab('risk')}>Risk Dist.</button>
+                            </div>
+                            <div className="tab-content">
+                                ${activeTab === 'asset' && html`<div className="chart-container"><canvas id="assetChart"></canvas></div>`}
+                                ${activeTab === 'sector' && html`<div className="chart-container"><canvas id="sectorChart"></canvas></div>`}
+                                ${activeTab === 'mcap' && html`<div className="chart-container"><canvas id="mcapChart"></canvas></div>`}
+                                ${activeTab === 'risk' && html`<div className="chart-container"><canvas id="riskChart"></canvas></div>`}
+                            </div>
+                        </div>
+                    `}
+
+                </section>
+
+                <!-- Right panel: AI analysis display grids -->
+                <section className="workspace-section display-panel">
+                    
+                    ${!result ? html`
+                        <!-- Welcome splash screen -->
+                        <div className="glass-card welcome-card">
+                            <div className="welcome-graphics">🤖🔮📊</div>
+                            <h2>Welcome to DiversifyAI, ${user.email.split('@')[0]}!</h2>
+                            <p>Load your investment portfolio to calculate instant allocations and generate a comprehensive diversification strategy powered by GenAI.</p>
+                            
+                            <div className="features-list">
+                                <div className="feature-item">
+                                    <span className="f-icon">📊</span>
+                                    <div>
+                                        <strong>Diversification Analysis</strong>
+                                        <p>Inspect multi-dimensional allocation models by asset type, volatility, market capitalization, and sector overlays instantly.</p>
+                                    </div>
+                                </div>
+                                <div className="feature-item">
+                                    <span className="f-icon">🤖</span>
+                                    <div>
+                                        <strong>GenAI Strategic Advisor</strong>
+                                        <p>Receive tailor-made diversification strategies detailing immediate threats, positive allocations, and model-specific optimization advisories.</p>
+                                    </div>
+                                </div>
+                                <div className="feature-item">
+                                    <span className="f-icon">⏰</span>
+                                    <div>
+                                        <strong>Proactive Daily Monitor</strong>
+                                        <p>Subscribe to our agentic alert system to monitor real-time stock news impact vectors in your inbox automatically every morning.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ` : html`
+                        <!-- Executive Summary & Threat Highlights -->
+                        ${result.report && html`
+                            <div className="glass-card" style=${{ borderLeft: '4px solid #3b82f6' }}>
+                                <h3 style=${{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <span>✨</span> Executive Summary
+                                </h3>
+                                <p style=${{ lineHeight: 1.6, color: '#e5e7eb' }}>
+                                    ${result.report.executive_summary}
+                                </p>
+                            </div>
+                        `}
+
+                        ${result.report && html`
+                            <div className="glass-card" style=${{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+                                <div>
+                                    <h3 style=${{ color: '#f43f5e', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        <span>⚠</span> Top Risks
+                                    </h3>
+                                    <ul style=${{ paddingLeft: '1.2rem', color: '#fecdd3', lineHeight: 1.5, fontSize: '0.95rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                        ${result.report.top_risks && result.report.top_risks.map((risk, i) => html`<li key=${i}>${risk}</li>`)}
+                                    </ul>
+                                </div>
+                                <div>
+                                    <h3 style=${{ color: '#10b981', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        <span>✔</span> Positive Aspects
+                                    </h3>
+                                    <ul style=${{ paddingLeft: '1.2rem', color: '#a7f3d0', lineHeight: 1.5, fontSize: '0.95rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                        ${result.report.positive_aspects && result.report.positive_aspects.map((pos, i) => html`<li key=${i}>${pos}</li>`)}
+                                    </ul>
+                                </div>
+                            </div>
+                        `}
+
+                        <!-- Sandbox What-If Simulator -->
+                        <div className="glass-card">
+                            <h3 style=${{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <span>🧪</span> What-If Simulation
+                            </h3>
+                            <p style=${{ fontSize: '0.9rem', color: '#9ca3af', marginBottom: '1rem' }}>Test how adding a new asset changes your risk and health scores.</p>
+                            <div style=${{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                <input 
+                                    type="text" 
+                                    placeholder="Ticker (e.g. RELIANCE)" 
+                                    value=${whatIfTicker}
+                                    onChange=${(e) => setWhatIfTicker(e.target.value)}
+                                    style=${{ flex: 1, padding: '0.75rem', borderRadius: '8px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }} 
+                                />
+                                <input 
+                                    type="number" 
+                                    placeholder="Amount ($)" 
+                                    value=${whatIfAmount}
+                                    onChange=${(e) => setWhatIfAmount(e.target.value)}
+                                    style=${{ flex: 1, padding: '0.75rem', borderRadius: '8px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }} 
+                                />
+                                <button className="btn btn-secondary" onClick=${handleWhatIfSimulate} disabled=${whatIfLoading || !whatIfTicker || !whatIfAmount} style=${{ whiteSpace: 'nowrap', width: 'auto' }}>
+                                    <span>${whatIfLoading ? 'Simulating...' : 'Simulate'}</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Table Grid view of raw holdings -->
+                        <div className="glass-card holdings-card">
+                            <div style=${{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', gap: '1rem', flexWrap: 'wrap' }}>
+                                <h2>Portfolio Holdings</h2>
+                                <div style=${{ 
+                                    display: 'flex', 
+                                    background: 'rgba(0,0,0,0.25)', 
+                                    padding: '0.25rem', 
+                                    borderRadius: '8px', 
+                                    border: '1px solid rgba(255,255,255,0.05)' 
+                                }}>
+                                    <button 
+                                        onClick=${() => setHoldingsTab('all')}
+                                        style=${{
+                                            padding: '0.4rem 1rem',
+                                            borderRadius: '6px',
+                                            border: 'none',
+                                            background: holdingsTab === 'all' ? 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)' : 'transparent',
+                                            color: holdingsTab === 'all' ? 'white' : '#9ca3af',
+                                            fontWeight: '600',
+                                            fontSize: '0.8rem',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.25s ease'
+                                        }}
+                                    >
+                                        🌐 All (${(result.assets || []).length})
+                                    </button>
+                                    <button 
+                                        onClick=${() => setHoldingsTab('equity')}
+                                        style=${{
+                                            padding: '0.4rem 1rem',
+                                            borderRadius: '6px',
+                                            border: 'none',
+                                            background: holdingsTab === 'equity' ? 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)' : 'transparent',
+                                            color: holdingsTab === 'equity' ? 'white' : '#9ca3af',
+                                            fontWeight: '600',
+                                            fontSize: '0.8rem',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.25s ease'
+                                        }}
+                                    >
+                                        📈 Stocks & ETFs (${(result.assets || []).filter(a => a['Asset Type'] !== 'Mutual Fund').length})
+                                    </button>
+                                    <button 
+                                        onClick=${() => setHoldingsTab('mf')}
+                                        style=${{
+                                            padding: '0.4rem 1rem',
+                                            borderRadius: '6px',
+                                            border: 'none',
+                                            background: holdingsTab === 'mf' ? 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)' : 'transparent',
+                                            color: holdingsTab === 'mf' ? 'white' : '#9ca3af',
+                                            fontWeight: '600',
+                                            fontSize: '0.8rem',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.25s ease'
+                                        }}
+                                    >
+                                        💼 Mutual Funds (${(result.assets || []).filter(a => a['Asset Type'] === 'Mutual Fund').length})
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="table-container">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Asset Name</th>
+                                            <th>Ticker</th>
+                                            <th>Sector</th>
+                                            <th className="text-right">Invested Value</th>
+                                            <th className="text-right">Current Value</th>
+                                            <th className="text-right">Total Profit/Loss</th>
+                                            <th className="text-right">Allocation</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${(result.assets || [])
+                                            .filter(asset => {
+                                                if (holdingsTab === 'mf') {
+                                                    return asset['Asset Type'] === 'Mutual Fund';
+                                                } else if (holdingsTab === 'equity') {
+                                                    return asset['Asset Type'] !== 'Mutual Fund';
+                                                }
+                                                return true;
+                                            })
+                                            .sort((a, b) => {
+                                                const valA = a['Current Value'] || 0.0;
+                                                const valB = b['Current Value'] || 0.0;
+                                                return valB - valA;
+                                            })
+                                            .map((asset, index) => {
+                                                const buyPrice = asset['Buy Price'] || 0.0;
+                                                const curPrice = asset['Current Price'] || 0.0;
+                                                const curVal = asset['Current Value'] || 0.0;
+                                                
+                                                let hasPnL = buyPrice > 0 && curPrice > 0 && curVal > 0;
+                                                let totalReturnVal = 0.0;
+                                                let totalReturnPct = 0.0;
+                                                let isUp = true;
+                                                let investedVal = 0.0;
+                                                
+                                                if (hasPnL) {
+                                                    investedVal = buyPrice * (curVal / curPrice);
+                                                    totalReturnVal = curVal - investedVal;
+                                                    totalReturnPct = ((curPrice - buyPrice) / buyPrice) * 100;
+                                                    isUp = totalReturnVal >= 0;
+                                                }
+
+                                                return html`
+                                                    <tr key=${index}>
+                                                        <td style=${{ maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title=${asset['Asset Name']}>
+                                                            ${asset['Asset Name']}
+                                                        </td>
+                                                        <td>
+                                                            <span 
+                                                                className="badge" 
+                                                                style=${{ 
+                                                                    background: 'rgba(255, 255, 255, 0.03)', 
+                                                                    border: '1px solid rgba(255, 255, 255, 0.08)', 
+                                                                    color: '#cbd5e1', 
+                                                                    fontFamily: 'SFMono-Regular, Consolas, monospace',
+                                                                    fontSize: '0.72rem',
+                                                                    padding: '0.15rem 0.45rem',
+                                                                    borderRadius: '4px',
+                                                                    display: 'inline-block',
+                                                                    letterSpacing: '0.02em',
+                                                                    boxSizing: 'border-box'
+                                                                }}
+                                                            >
+                                                                ${asset['Ticker']}
+                                                            </span>
+                                                        </td>
+                                                        <td>${asset['Sector']}</td>
+                                                        <td className="text-right">
+                                                            <div style=${{ color: '#e2e8f0', fontWeight: '500' }}>
+                                                                ${investedVal > 0 ? formatCurrency(investedVal) : '--'}
+                                                            </div>
+                                                            ${buyPrice > 0 ? html`
+                                                                <div style=${{ fontSize: '0.7rem', color: '#64748b', marginTop: '0.1rem' }}>
+                                                                    avg. ${formatCurrency(buyPrice)}
+                                                                </div>
+                                                            ` : ''}
+                                                        </td>
+                                                        <td className="text-right">
+                                                            <div style=${{ color: '#e2e8f0', fontWeight: '500' }}>
+                                                                ${curVal > 0 ? formatCurrency(curVal) : '--'}
+                                                            </div>
+                                                            ${curPrice > 0 ? html`
+                                                                <div style=${{ fontSize: '0.7rem', color: '#64748b', marginTop: '0.1rem' }}>
+                                                                    price ${formatCurrency(curPrice)}
+                                                                </div>
+                                                            ` : ''}
+                                                        </td>
+                                                        <td className="text-right">
+                                                            ${hasPnL ? html`
+                                                                <span 
+                                                                    className="badge" 
+                                                                    style=${{ 
+                                                                        background: isUp ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)', 
+                                                                        borderColor: isUp ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)', 
+                                                                        color: isUp ? '#10b981' : '#ef4444', 
+                                                                        fontWeight: '600',
+                                                                        display: 'inline-flex',
+                                                                        alignItems: 'center',
+                                                                        gap: '4px',
+                                                                        padding: '0.2rem 0.55rem',
+                                                                        borderRadius: '6px',
+                                                                        fontSize: '0.75rem',
+                                                                        lineHeight: '1',
+                                                                        boxSizing: 'border-box'
+                                                                    }}
+                                                                >
+                                                                    ${isUp ? html`
+                                                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+                                                                            <polyline points="18 15 12 9 6 15"></polyline>
+                                                                        </svg>
+                                                                    ` : html`
+                                                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+                                                                            <polyline points="6 9 12 15 18 9"></polyline>
+                                                                        </svg>
+                                                                    `}
+                                                                    ${isUp ? '+' : ''}${formatCurrency(totalReturnVal)} (${isUp ? '+' : ''}${totalReturnPct.toFixed(1)}%)
+                                                                </span>
+                                                            ` : html`
+                                                                <span className="badge" style=${{ background: 'rgba(255,255,255,0.05)', color: '#9ca3af' }}>--</span>
+                                                            `}
+                                                        </td>
+                                                        <td className="text-right" style=${{ color: '#cbd5e1', fontWeight: '600' }}>${asset.Percentage ? `${asset.Percentage.toFixed(1)}%` : '0%'}</td>
+                                                    </tr>
+                                                `;
+                                            })
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Markdown Advisor reports -->
+                        ${result.report && result.report.executive_summary && html`
+                            <div className="glass-card report-card">
+                                <div className="card-header-actions">
+                                    <h2>Detailed AI Insights</h2>
+                                </div>
+                                <div className="report-scroll-container">
+                                    <div 
+                                        className="markdown-body" 
+                                        dangerouslySetInnerHTML=${{ __html: marked.parse(result.report.insights ? result.report.insights.map(ins => `### ${ins.title}\n\n${ins.description}`).join('\n\n') : '') }}
+                                    />
+                                </div>
+                            </div>
+                        `}
+
+                        <!-- Stateful GenAI chat cards widget -->
+                        <div className="glass-card" style=${{ display: 'flex', flexDirection: 'column', height: '350px' }}>
+                            <h3 style=${{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.5rem' }}>
+                                <span>💬</span> Ask about your portfolio...
+                            </h3>
+                            <div style=${{ flex: 1, overflowY: 'auto', paddingRight: '0.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                ${chatHistory.map((msg, i) => html`
+                                    <div 
+                                        key=${i} 
+                                        className=${`chat-msg ${msg.sender === 'ai' ? 'ai-msg' : 'user-msg'}`}
+                                        style=${{
+                                            alignSelf: msg.sender === 'ai' ? 'flex-start' : 'flex-end',
+                                            background: msg.sender === 'ai' ? 'rgba(59,130,246,0.1)' : 'rgba(99,102,241,0.2)',
+                                            border: msg.sender === 'ai' ? '1px solid rgba(59,130,246,0.2)' : '1px solid rgba(99,102,241,0.3)',
+                                            padding: '0.75rem 1rem',
+                                            borderRadius: '12px',
+                                            maxWidth: '80%',
+                                            borderBottomLeftRadius: msg.sender === 'ai' ? '4px' : '12px',
+                                            borderBottomRightRadius: msg.sender === 'user' ? '4px' : '12px',
+                                            fontSize: '0.9rem',
+                                            color: '#f1f5f9'
+                                        }}
+                                    >
+                                        ${msg.text}
+                                    </div>
+                                `)}
+                                ${chatLoading && html`
+                                    <div style=${{ alignSelf: 'flex-start', background: 'rgba(255,255,255,0.05)', padding: '0.75rem 1rem', borderRadius: '12px', color: '#94a3b8', fontSize: '0.9rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                        <span>Thinking...</span>
+                                        <div className="spinner" style=${{ width: '12px', height: '12px' }}></div>
+                                    </div>
+                                `}
+                            </div>
+                            
+                            <!-- Chat prompts shortcuts -->
+                            <div style=${{ display: 'flex', gap: '0.5rem', margin: '0.5rem 0', flexWrap: 'wrap' }}>
+                                <button className="btn btn-secondary btn-sm" onClick=${() => { setChatMessage("Which stock has the highest risk factor?"); }} style=${{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}>Highest Risk Ticker?</button>
+                                <button className="btn btn-secondary btn-sm" onClick=${() => { setChatMessage("How can I minimize overall sector concentration?"); }} style=${{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}>Reduce Concentration?</button>
+                            </div>
+
+                            <div style=${{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                                <input 
+                                    type="text" 
+                                    placeholder="Type your question..." 
+                                    value=${chatMessage}
+                                    onChange=${(e) => setChatMessage(e.target.value)}
+                                    onKeyDown=${(e) => e.key === 'Enter' && handleSendChat()}
+                                    style=${{ flex: 1, padding: '0.75rem', borderRadius: '8px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }} 
+                                />
+                                <button className="btn btn-primary" onClick=${handleSendChat} disabled=${chatLoading || !chatMessage.trim()} style=${{ padding: '0.75rem 1.5rem', width: 'auto' }}>
+                                    Send
+                                </button>
+                            </div>
+                        </div>
+                    `}
+
+                </section>
+            </main>
+            
+            <footer className="app-footer">
+                <p>© 2026 DiversifyAI — Autonomous Portfolio Diversification Platform. Secure session alerts active.</p>
+            </footer>
+        </div>
+    `;
+}
+
+// --- 4. ROOT SWITCH COMPONENT ---
+function MainApp() {
+    const { user, loading } = useAuth();
+
+    if (loading) {
+        return html`
+            <div style=${{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyCenter: 'center', height: '100vh', backgroundColor: '#0f172a', color: '#f1f5f9', fontFamily: 'Outfit', gap: '1.5rem', justifyContent: 'center' }}>
+                <div className="spinner" style=${{ width: '40px', height: '40px', borderTopColor: '#6366f1' }}></div>
+                <div style=${{ fontSize: '1.1rem', fontWeight: '500', color: '#94a3b8' }}>Restoring User Session...</div>
+            </div>
+        `;
     }
 
-    function formatCurrency(value) {
-        return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(value);
-    }
+    return html`
+        ${user ? html`<${Dashboard} />` : html`<${AuthScreen} />`}
+    `;
+}
 
-    function escapeHTML(str) {
-        if (!str) return "";
-        return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-    }
-});
+// Bootstrapping App Client
+const root = createRoot(document.getElementById('root'));
+root.render(html`
+    <${AuthProvider}>
+        <${MainApp} />
+    </${AuthProvider}>
+`);

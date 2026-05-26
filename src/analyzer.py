@@ -22,13 +22,45 @@ class PortfolioAnalyzer:
         self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
         self.base_url = base_url or os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 
+        # Proactively clean dummy placeholder environment variables
+        placeholders = ["your_openai_api_key_here", "your_gemini_api_key_here", "your_openrouter_api_key_here", ""]
+        if self.api_key in placeholders:
+            self.api_key = None
+
+        print(f"🔧 PortfolioAnalyzer Constructor Inputs: model={model}, api_key_provided={bool(api_key)}, base_url={base_url}")
+
+        # Smart, proactive API key matching
+        if self.api_key and self.api_key.startswith("AIzaSy"):
+            # This is a Google Gemini key!
+            if not self.model.startswith("gemini"):
+                print(f"💡 Detected Gemini API Key prefix (AIzaSy) with model {self.model}. Auto-matching to gemini-2.5-flash for seamless compatibility.")
+                self.model = "gemini-2.5-flash"
+            # Set base URL to Google Generative Language compatibility endpoint
+            self.base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+
+        elif self.api_key and self.api_key.startswith("gsk_"):
+            # This is a Groq API key!
+            if not (self.model.startswith("llama") or self.model.startswith("mixtral")):
+                print(f"💡 Detected Groq API Key prefix (gsk_) with model {self.model}. Auto-matching to llama-3.3-70b-versatile for seamless compatibility.")
+                self.model = "llama-3.3-70b-versatile"
+            self.base_url = "https://api.groq.com/openai/v1"
+
         if not base_url and self.model.startswith("gpt"):
             self.base_url = "https://api.openai.com/v1"
-            self.api_key = self.api_key or os.getenv("OPENAI_API_KEY")
+            resolved_key = self.api_key or os.getenv("OPENAI_API_KEY")
+            self.api_key = None if resolved_key in placeholders else resolved_key
             
         elif not base_url and self.model.startswith("gemini"):
             self.base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
-            self.api_key = self.api_key or os.getenv("GEMINI_API_KEY")
+            resolved_key = self.api_key or os.getenv("GEMINI_API_KEY")
+            self.api_key = None if resolved_key in placeholders else resolved_key
+
+        elif not base_url and (self.model.startswith("llama") or self.model.startswith("mixtral")):
+            self.base_url = "https://api.groq.com/openai/v1"
+            resolved_key = self.api_key or os.getenv("GROQ_API_KEY")
+            self.api_key = None if resolved_key in placeholders else resolved_key
+
+        print(f"🔌 PortfolioAnalyzer Resolved Settings: model={self.model}, base_url={self.base_url}, api_key_length={len(self.api_key) if self.api_key else 0}")
 
         if self.api_key:
             self.client = OpenAI(
@@ -55,6 +87,20 @@ class PortfolioAnalyzer:
             raise ValueError(f"Failed to read CSV file: {str(e)}")
 
         df.columns = [col.strip() for col in df.columns]
+
+        # Standardize known column aliases
+        alias_mapping = {
+            "Average Buy Price": "Buy Price",
+            "Avg Buy Price": "Buy Price",
+            "Average Price": "Buy Price",
+            "Avg Price": "Buy Price",
+            "Purchase Price": "Buy Price",
+            "BuyPrice": "Buy Price",
+            "Qty": "Quantity",
+            "Shares": "Quantity"
+        }
+        df = df.rename(columns={col: alias_mapping[col] for col in df.columns if col in alias_mapping})
+
         missing_cols = [col for col in self.REQUIRED_COLUMNS if col not in df.columns]
         if missing_cols:
             raise ValueError(f"Missing required columns in CSV: {missing_cols}")
@@ -64,6 +110,12 @@ class PortfolioAnalyzer:
         except Exception:
             raise ValueError("All entries in the 'Current Value' column must be numeric.")
 
+        # Handle optional columns safely
+        if "Buy Price" in df.columns:
+            df["Buy Price"] = pd.to_numeric(df["Buy Price"], errors="coerce").fillna(0.0)
+        if "Quantity" in df.columns:
+            df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce").fillna(0.0)
+
         df = self.enrich_portfolio(df)
         return df
 
@@ -72,6 +124,10 @@ class PortfolioAnalyzer:
             df["Beta"] = 1.0
         if "MarketCap" not in df.columns:
             df["MarketCap"] = 0.0
+        if "Current Price" not in df.columns:
+            df["Current Price"] = 0.0
+        if "Previous Close" not in df.columns:
+            df["Previous Close"] = 0.0
 
         for idx, row in df.iterrows():
             ticker = row.get("Ticker", "")
@@ -86,6 +142,16 @@ class PortfolioAnalyzer:
                     
                 df.at[idx, "Beta"] = meta["beta"] if meta["beta"] is not None else 1.0
                 df.at[idx, "MarketCap"] = meta["marketCap"] if meta["marketCap"] is not None else 0.0
+                # Only overwrite Current Price if it's missing or zero
+                existing_price = row.get("Current Price", 0.0)
+                if pd.isna(existing_price) or existing_price <= 0.0:
+                    df.at[idx, "Current Price"] = meta["currentPrice"]
+                    df.at[idx, "Previous Close"] = meta["previousClose"]
+                else:
+                    # Keep existing price, but set previous close if missing
+                    existing_prev = row.get("Previous Close", 0.0)
+                    if pd.isna(existing_prev) or existing_prev <= 0.0:
+                        df.at[idx, "Previous Close"] = meta["previousClose"]
         return df
 
     def _categorize_market_cap(self, mcap):
@@ -227,6 +293,7 @@ Please provide the structured JSON analysis. Adjust the baseline scores slightly
                 ],
                 temperature=0.2,
                 response_format={ "type": "json_object" } if "gpt" in self.model else None
+                
             )
             
             raw_content = response.choices[0].message.content.strip()

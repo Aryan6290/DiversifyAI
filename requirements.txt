@@ -73,3 +73,6 @@ uvicorn==0.47.0
 websockets==16.0
 yfinance==1.4.0
 zope.interface==8.4
+SQLAlchemy==2.0.31
+pg8000==1.31.2
+apscheduler==3.10.4

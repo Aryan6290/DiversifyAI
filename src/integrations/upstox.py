@@ -96,7 +96,9 @@ class UpstoxIntegration:
                     "Asset Type": "Equity",
                     "Sector": "Unclassified",
                     "Current Value": current_value,
-                    "Currency": "INR"
+                    "Currency": "INR",
+                    "Buy Price": h["avg_price"],
+                    "Quantity": h["quantity"]
                 })
         
         return pd.DataFrame(data)
