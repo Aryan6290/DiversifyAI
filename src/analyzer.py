@@ -142,8 +142,16 @@ class PortfolioAnalyzer:
                     
                 df.at[idx, "Beta"] = meta["beta"] if meta["beta"] is not None else 1.0
                 df.at[idx, "MarketCap"] = meta["marketCap"] if meta["marketCap"] is not None else 0.0
-                df.at[idx, "Current Price"] = meta["currentPrice"]
-                df.at[idx, "Previous Close"] = meta["previousClose"]
+                # Only overwrite Current Price if it's missing or zero
+                existing_price = row.get("Current Price", 0.0)
+                if pd.isna(existing_price) or existing_price <= 0.0:
+                    df.at[idx, "Current Price"] = meta["currentPrice"]
+                    df.at[idx, "Previous Close"] = meta["previousClose"]
+                else:
+                    # Keep existing price, but set previous close if missing
+                    existing_prev = row.get("Previous Close", 0.0)
+                    if pd.isna(existing_prev) or existing_prev <= 0.0:
+                        df.at[idx, "Previous Close"] = meta["previousClose"]
         return df
 
     def _categorize_market_cap(self, mcap):

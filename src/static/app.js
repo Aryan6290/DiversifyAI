@@ -974,10 +974,9 @@ function Dashboard() {
                                             <th>Asset Name</th>
                                             <th>Ticker</th>
                                             <th>Sector</th>
-                                            <th className="text-right">Avg Buy Price</th>
-                                            <th className="text-right">Current Price</th>
+                                            <th className="text-right">Invested Value</th>
+                                            <th className="text-right">Current Value</th>
                                             <th className="text-right">Total Profit/Loss</th>
-                                            <th className="text-right">Value</th>
                                             <th className="text-right">Allocation</th>
                                         </tr>
                                     </thead>
@@ -1005,9 +1004,10 @@ function Dashboard() {
                                                 let totalReturnVal = 0.0;
                                                 let totalReturnPct = 0.0;
                                                 let isUp = true;
+                                                let investedVal = 0.0;
                                                 
                                                 if (hasPnL) {
-                                                    const investedVal = buyPrice * (curVal / curPrice);
+                                                    investedVal = buyPrice * (curVal / curPrice);
                                                     totalReturnVal = curVal - investedVal;
                                                     totalReturnPct = ((curPrice - buyPrice) / buyPrice) * 100;
                                                     isUp = totalReturnVal >= 0;
@@ -1038,11 +1038,25 @@ function Dashboard() {
                                                             </span>
                                                         </td>
                                                         <td>${asset['Sector']}</td>
-                                                        <td className="text-right" style=${{ color: '#e2e8f0', fontWeight: '500' }}>
-                                                            ${buyPrice > 0 ? formatCurrency(buyPrice) : '--'}
+                                                        <td className="text-right">
+                                                            <div style=${{ color: '#e2e8f0', fontWeight: '500' }}>
+                                                                ${investedVal > 0 ? formatCurrency(investedVal) : '--'}
+                                                            </div>
+                                                            ${buyPrice > 0 ? html`
+                                                                <div style=${{ fontSize: '0.7rem', color: '#64748b', marginTop: '0.1rem' }}>
+                                                                    avg. ${formatCurrency(buyPrice)}
+                                                                </div>
+                                                            ` : ''}
                                                         </td>
-                                                        <td className="text-right" style=${{ fontWeight: '500' }}>
-                                                            ${curPrice > 0 ? formatCurrency(curPrice) : '--'}
+                                                        <td className="text-right">
+                                                            <div style=${{ color: '#e2e8f0', fontWeight: '500' }}>
+                                                                ${curVal > 0 ? formatCurrency(curVal) : '--'}
+                                                            </div>
+                                                            ${curPrice > 0 ? html`
+                                                                <div style=${{ fontSize: '0.7rem', color: '#64748b', marginTop: '0.1rem' }}>
+                                                                    price ${formatCurrency(curPrice)}
+                                                                </div>
+                                                            ` : ''}
                                                         </td>
                                                         <td className="text-right">
                                                             ${hasPnL ? html`
@@ -1078,7 +1092,6 @@ function Dashboard() {
                                                                 <span className="badge" style=${{ background: 'rgba(255,255,255,0.05)', color: '#9ca3af' }}>--</span>
                                                             `}
                                                         </td>
-                                                        <td className="text-right" style=${{ fontWeight: '500' }}>${formatCurrency(asset['Current Value'])}</td>
                                                         <td className="text-right" style=${{ color: '#cbd5e1', fontWeight: '600' }}>${asset.Percentage ? `${asset.Percentage.toFixed(1)}%` : '0%'}</td>
                                                     </tr>
                                                 `;

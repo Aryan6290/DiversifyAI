@@ -153,6 +153,7 @@ def parse_cdsl_cas(pdf_file, password: str) -> pd.DataFrame:
                             "Currency": "INR",
                             "Quantity": quantity,
                             "Buy Price": buy_price,
+                            "Current Price": nav,
                             "ISIN": isin
                         })
                 current_scheme = "" # Reset
@@ -236,6 +237,7 @@ def parse_cdsl_cas(pdf_file, password: str) -> pd.DataFrame:
                         "Currency": "INR",
                         "Quantity": qty,
                         "Buy Price": price,
+                        "Current Price": price,
                         "ISIN": isin
                     })
         else:
@@ -251,6 +253,8 @@ def parse_cdsl_cas(pdf_file, password: str) -> pd.DataFrame:
             existing["Current Value"] += h["Current Value"]
             if existing["Quantity"] > 0:
                 existing["Buy Price"] = (existing["Buy Price"] * (existing["Quantity"] - h["Quantity"]) + h["Buy Price"] * h["Quantity"]) / existing["Quantity"]
+            if "Current Price" in h:
+                existing["Current Price"] = h["Current Price"]
         else:
             combined_holdings[isin] = h
             
@@ -258,6 +262,6 @@ def parse_cdsl_cas(pdf_file, password: str) -> pd.DataFrame:
     
     if df.empty:
         # Return empty DataFrame with required columns
-        return pd.DataFrame(columns=["Asset Name", "Ticker", "Asset Type", "Sector", "Current Value", "Currency", "Quantity", "Buy Price", "ISIN"])
+        return pd.DataFrame(columns=["Asset Name", "Ticker", "Asset Type", "Sector", "Current Value", "Currency", "Quantity", "Buy Price", "Current Price", "ISIN"])
         
     return df
