@@ -1,113 +1,100 @@
 # DiversifyAI — GenAI Portfolio Diversification Analyzer
 
-A modern, high-fidelity Web Application and API that analyzes your investment portfolio using Google's Gemini generative AI models. The system features a responsive, beautifully styled dark dashboard layout complete with drag-and-drop file upload, interactive animated doughnut charts, a custom Holdings list, and real-time advisory reports.
-
-## Features
-
-- **Sleek Web UI**: Dashboard built with modern glassmorphic Vanilla CSS styling and high contrast HSL variables.
-- **FastAPI Backend**: Built using FastAPI, with standard endpoints supporting file uploads in-memory.
-- **Visual Data breakdown**: Interactive, clean doughnut charts rendering your allocations dynamically using `Chart.js`.
-- **Markdown Advisory Reporting**: Generates a professional advisor report from Gemini (`gemini-2.5-flash`) rendered beautifully into HTML using `marked.js`.
-- **Flexible Keys**: Supports server-side configuration using `.env` or secure user-supplied keys directly through the UI.
-- **Legacy CLI Option**: Includes the original command-line script (`src/main.py`) for offline operations.
+DiversifyAI is a production-ready, high-fidelity Web Application and API that analyzes your stock and mutual fund investments using Google's Gemini generative AI models. The system features a responsive, beautifully styled dark glassmorphic dashboard complete with drag-and-drop file upload, interactive animated charts, database-backed persistent authentication, Consolidated Account Statement (CAS) PDF parsing, and real-time strategic GenAI advisory.
 
 ---
 
-## Directory Structure
+## 🌟 Premium Features
+
+- **📊 High-Fidelity Tabular UI**: A completely custom holdings grid displaying **Invested Value**, **Current Value**, **Total Profit/Loss** (with custom cross-platform SVG indicators), and **Percent Allocation** with unit averages/NAVs clearly shown.
+- **📂 CDSL CAS PDF Parsing**: Fully integrated consolidated account statement parser supporting password-encrypted PDFs to automatically extract mutual funds and demat equity holdings.
+- **🔒 Persistent Database Sessions**: Durable session state managed via SQLite/PostgreSQL, ensuring user logins remain completely persistent across server restarts and auto-reloads.
+- **🤖 GenAI Strategic Advisor**: Leverages Gemini (`gemini-2.5-flash` or custom models) to analyze asset correlations, detect sector concentration, compute volatility indicators, and deliver tailored strategies.
+- **📈 Interactive Breakdown Visualizations**: Beautiful, animated doughnut charts powered by `Chart.js` reflecting your real-time allocations by Asset Type, Sector, Market Capitalization, and Risk/Volatility.
+- **⚡ Proactive Daily Alerts**: Background scheduler executing every morning at 8:00 AM to monitor market news impact vectors on your holdings and deliver actionable intelligence to your inbox.
+- **💬 Conversational AI Chat Widget**: Integrated interactive chatbot allowing you to query your portfolio dynamically (e.g., *"Which stock is my highest risk?"*, *"Suggest ways to reduce volatility"*).
+
+---
+
+## 📁 Directory Structure
 
 ```
 Sample/
 ├── .env.template             # Template environment variables (GEMINI_API_KEY)
-├── requirements.txt          # Python packages (fastapi, pandas, google-generativeai, etc.)
-├── README.md                 # Project guide and instructions
+├── requirements.txt          # Python packages (fastapi, pandas, pypdf, SQLAlchemy, etc.)
+├── README.md                 # Product guide and instructions
 ├── data/
-│   └── sample_portfolio.csv  # Example portfolio to get you started
+│   └── sample_portfolio.csv  # Example CSV portfolio
 └── src/
     ├── __init__.py
-    ├── analyzer.py           # Core logic (CSV loader & Gemini API integration)
-    ├── app.py                # NEW: FastAPI web server and routing
-    ├── main.py               # Command-line entrypoint
-    └── static/               # NEW: Premium frontend dashboard
-        ├── index.html        # Glassmorphism HTML layout
-        ├── styles.css        # Dashboard styling system
-        └── app.js            # Interactive logic & Chart.js orchestration
+    ├── app.py                # Primary FastAPI web server & routes
+    ├── analyzer.py           # Core portfolio analytics & GenAI reporting
+    ├── db.py                 # Database models (Users, Portfolios, UserSession, Subscriptions)
+    ├── auth_utils.py         # Persistent session utility functions
+    ├── scheduler.py          # Background daily monitoring engine
+    ├── services/
+    │   ├── cas_parser.py     # Consolidated Account Statement (CAS) PDF parser
+    │   ├── metadata_service.py # Real-time stock metadata classifier & yfinance interface
+    │   └── email_service.py  # GenAI automated daily email reporter
+    └── static/               # Premium glassmorphic frontend
+        ├── index.html        # Glassmorphic layout structure
+        ├── styles.css        # Dashboard styling system & CSS Grid responsive locks
+        └── app.js            # Interactive app logic & Chart.js orchestration
 ```
 
 ---
 
-## Setup Instructions
+## 🚀 Setup & Installation
 
-### 1. Prerequisites
-Make sure you have Python 3.8+ installed on your system.
-
-### 2. Navigate and Create Virtual Environment
-Open your terminal and run:
+### 1. Clone & Initialize Environment
+Ensure you have Python 3.9+ installed, then set up the virtual environment:
 ```bash
+# Navigate to the project root
 cd "/Users/aryanbarnwal/Projects/GenAI Project/Sample"
+
+# Create a virtual environment
 python3 -m venv venv
+
+# Activate the virtual environment
 source venv/bin/activate
+
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-### 3. Set Up API Key
-Copy the `.env.template` to `.env`:
+### 2. Configure Environment Variables
+Copy `.env.template` to `.env`:
 ```bash
 cp .env.template .env
 ```
-Open `.env` and paste your Google Gemini API key:
+Open `.env` and fill in your details:
 ```env
 GEMINI_API_KEY=AIzaSy...
+# Optional details for the email alert system:
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASSWORD=your-app-password
 ```
-*(If you do not have an API key, you can get one from [Google AI Studio](https://aistudio.google.com/). You can also paste it directly into the web UI during analysis.)*
+*(If you do not have an API key, you can get one from [Google AI Studio](https://aistudio.google.com/) or enter a custom key directly in the web dashboard header during runtime.)*
 
 ---
 
-## Running the Web Application
+## 💻 Running the Application
 
-To launch the web dashboard server:
+### Launch the Web Server
+With your virtual environment active, run:
 ```bash
-python src/app.py
-```
-Or use `uvicorn`:
-```bash
-uvicorn src.app:app --reload --port 8000
+cd src
+../venv/bin/python -m uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Open **`http://localhost:8000`** in your browser!
-1. Drag and drop the `data/sample_portfolio.csv` file (or upload your own).
-2. Enter a custom key in the header (optional).
-3. Click **"Analyze Portfolio"** to view interactive allocation charts and your personalized financial advice.
 
----
-
-## Running the CLI Version (Alternative)
-
-If you prefer operating directly in your terminal:
-```bash
-python src/main.py data/sample_portfolio.csv
-```
-
----
-
-## Usage Guide & Screenshots
-
-The application provides a fully interactive dashboard to manage and analyze your portfolio. 
-
-### 1. Dashboard Overview
-When you start the application, you'll be greeted with the main dashboard. Here, you can view your total assets, allocation breakdown, and holdings table.
-
-![Dashboard Overview](assets/dashboard_overview.png)
-
-### 2. Connect Broker or Upload CSV
-You have two ways to import your portfolio:
-- **Broker Integration:** Click on **"Connect Upstox"** to securely authenticate and fetch your live holdings.
-- **CSV Upload:** Drag and drop your `sample_portfolio.csv` into the analyze panel.
-
-### 3. AI Analysis & Health Scores
-Once your holdings are loaded, the application will compute your overall **Health Score** and **Risk Score**. The backend will then consult the AI model to generate an **Executive Summary**, highlight **Top Risks**, and outline **Positive Aspects**.
-
-![Dashboard Analysis](assets/dashboard_analysis.png)
-
-### 4. What-If Scenarios & Chat
-- Scroll down to try the **What-If Simulation** to see how adding new stocks affects your overall portfolio diversification.
-- Use the **AI Chat** interface to ask customized questions about your investments directly to the LLM (e.g., "Which of my stocks has the highest beta?").
+### How to Analyze:
+1. Register/Log in to your account.
+2. Drag and drop either:
+   - **A standard CSV file** (e.g. `data/sample_portfolio.csv`).
+   - **Your password-encrypted CDSL CAS PDF** (provide the password in the decryption box).
+3. Click **"Analyze Portfolio"** to generate real-time metrics, interactive allocations, and advisory reports.
+4. Try out **What-If Simulations** or converse directly with the **GenAI Chatbot** at the bottom of the page!
