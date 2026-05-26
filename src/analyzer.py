@@ -38,6 +38,13 @@ class PortfolioAnalyzer:
             # Set base URL to Google Generative Language compatibility endpoint
             self.base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
+        elif self.api_key and self.api_key.startswith("gsk_"):
+            # This is a Groq API key!
+            if not (self.model.startswith("llama") or self.model.startswith("mixtral")):
+                print(f"💡 Detected Groq API Key prefix (gsk_) with model {self.model}. Auto-matching to llama-3.3-70b-versatile for seamless compatibility.")
+                self.model = "llama-3.3-70b-versatile"
+            self.base_url = "https://api.groq.com/openai/v1"
+
         if not base_url and self.model.startswith("gpt"):
             self.base_url = "https://api.openai.com/v1"
             resolved_key = self.api_key or os.getenv("OPENAI_API_KEY")
@@ -46,6 +53,11 @@ class PortfolioAnalyzer:
         elif not base_url and self.model.startswith("gemini"):
             self.base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
             resolved_key = self.api_key or os.getenv("GEMINI_API_KEY")
+            self.api_key = None if resolved_key in placeholders else resolved_key
+
+        elif not base_url and (self.model.startswith("llama") or self.model.startswith("mixtral")):
+            self.base_url = "https://api.groq.com/openai/v1"
+            resolved_key = self.api_key or os.getenv("GROQ_API_KEY")
             self.api_key = None if resolved_key in placeholders else resolved_key
 
         print(f"🔌 PortfolioAnalyzer Resolved Settings: model={self.model}, base_url={self.base_url}, api_key_length={len(self.api_key) if self.api_key else 0}")
