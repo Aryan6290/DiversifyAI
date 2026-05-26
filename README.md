@@ -4,7 +4,7 @@ DiversifyAI is a production-ready, high-fidelity Web Application and API that an
 
 ---
 
-## 🌟 Premium Features
+## 🌟 Premium Features 
 
 - **📊 High-Fidelity Tabular UI**: A completely custom holdings grid displaying **Invested Value**, **Current Value**, **Total Profit/Loss** (with custom cross-platform SVG indicators), and **Percent Allocation** with unit averages/NAVs clearly shown.
 - **📂 CDSL CAS PDF Parsing**: Fully integrated consolidated account statement parser supporting password-encrypted PDFs to automatically extract mutual funds and demat equity holdings.
