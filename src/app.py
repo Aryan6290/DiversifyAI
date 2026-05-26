@@ -3,7 +3,7 @@ import io
 import uvicorn
 import pandas as pd
 from typing import Optional
-from fastapi import FastAPI, UploadFile, File, Header, HTTPException, Request
+from fastapi import FastAPI, UploadFile, File, Header, HTTPException, Request, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from analyzer import PortfolioAnalyzer
 from integrations.kite import KiteIntegration
 from integrations.upstox import UpstoxIntegration
+from services.cas_parser import parse_cdsl_cas
 
 # Database & Scheduler Integrations
 from db import init_db, get_db, UserSubscription, UserPortfolio, User
@@ -167,7 +168,8 @@ async def analyze(
     x_model: Optional[str] = Header("gpt-4o-mini"),
     x_api_key: Optional[str] = Header(None),
     x_base_url: Optional[str] = Header(None),
-    user_id: int = Depends(get_current_user_id)
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
 ):
     """
     Parses the uploaded portfolio CSV, computes percentage allocations,
@@ -210,6 +212,30 @@ async def analyze(
         assets_list["Percentage"] = (assets_list["Current Value"] / total_val) * 100
         assets_list = assets_list.fillna("").to_dict(orient="records")
 
+        # Automatically overwrite the portfolio holdings in the database
+        sub = db.query(UserSubscription).filter(UserSubscription.user_id == user_id).first()
+        if not sub:
+            user = db.query(User).filter(User.id == user_id).first()
+            sub = UserSubscription(
+                user_id=user_id,
+                email=user.email if user else "",
+                is_active=False,
+                model=model_name,
+                api_key=x_api_key
+            )
+            db.add(sub)
+            db.commit()
+            db.refresh(sub)
+            
+        portfolio = db.query(UserPortfolio).filter(UserPortfolio.subscription_id == sub.id).first()
+        if not portfolio:
+            portfolio = UserPortfolio(subscription_id=sub.id, holdings_json=assets_list)
+            db.add(portfolio)
+        else:
+            portfolio.holdings_json = assets_list
+            
+        db.commit()
+
         response_data = {
             "success": True,
             "total_value": float(total_val),
@@ -237,6 +263,109 @@ async def analyze(
         return JSONResponse(
             status_code=500,
             content={"success": False, "error": f"An error occurred: {str(e)}"}
+        )
+
+@app.post("/api/analyze/cas")
+async def analyze_cas(
+    file: UploadFile = File(...),
+    password: str = Form(""),
+    x_model: Optional[str] = Header("gpt-4o-mini"),
+    x_api_key: Optional[str] = Header(None),
+    x_base_url: Optional[str] = Header(None),
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Parses the uploaded Consolidated Account Statement (CAS) PDF, 
+    decrypts it using the user-provided password, standardizes assets,
+    computes allocations, and runs OpenAI SDK to assess diversification.
+    """
+    if not file.filename.endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF statement files are supported.")
+
+    model_name = (x_model or "gpt-4o-mini").strip()
+
+    try:
+        # Read the uploaded PDF file contents into memory
+        contents = await file.read()
+        pdf_io = io.BytesIO(contents)
+
+        # Parse the CAS statement using pypdf parser
+        parsed_df = parse_cdsl_cas(pdf_io, password.strip())
+
+        # Initialize the analyzer with selected model, key, and base URL
+        analyzer = PortfolioAnalyzer(model=model_name, api_key=x_api_key, base_url=x_base_url)
+
+        # Enrich the parsed portfolio using existing analyzer logic
+        portfolio_df = analyzer.enrich_portfolio(parsed_df)
+        
+        # Calculate breakdowns
+        allocations = analyzer.calculate_allocations(portfolio_df)
+
+        # Get GenAI advice
+        report = analyzer.generate_diversification_report(portfolio_df, allocations)
+
+        # Clean NaN/Inf in DataFrames to ensure clean JSON serialization
+        asset_type_df = allocations["asset_type_breakdown"].fillna("")
+        sector_df = allocations["sector_breakdown"].fillna("")
+        market_cap_df = allocations.get("market_cap_breakdown", pd.DataFrame()).fillna("")
+        risk_df = allocations.get("risk_breakdown", pd.DataFrame()).fillna("")
+
+        # Include percentages on raw assets list to render them in a beautiful table
+        total_val = allocations["total_value"]
+        assets_list = portfolio_df.copy()
+        assets_list["Percentage"] = (assets_list["Current Value"] / total_val) * 100
+        assets_list = assets_list.fillna("").to_dict(orient="records")
+
+        # Automatically overwrite the portfolio holdings in the database
+        sub = db.query(UserSubscription).filter(UserSubscription.user_id == user_id).first()
+        if not sub:
+            user = db.query(User).filter(User.id == user_id).first()
+            sub = UserSubscription(
+                user_id=user_id,
+                email=user.email if user else "",
+                is_active=False,
+                model=model_name,
+                api_key=x_api_key
+            )
+            db.add(sub)
+            db.commit()
+            db.refresh(sub)
+            
+        portfolio = db.query(UserPortfolio).filter(UserPortfolio.subscription_id == sub.id).first()
+        if not portfolio:
+            portfolio = UserPortfolio(subscription_id=sub.id, holdings_json=assets_list)
+            db.add(portfolio)
+        else:
+            portfolio.holdings_json = assets_list
+            
+        db.commit()
+
+        response_data = {
+            "success": True,
+            "total_value": float(total_val),
+            "asset_type_breakdown": asset_type_df.to_dict(orient="records"),
+            "sector_breakdown": sector_df.to_dict(orient="records"),
+            "market_cap_breakdown": market_cap_df.to_dict(orient="records") if not market_cap_df.empty else [],
+            "risk_breakdown": risk_df.to_dict(orient="records") if not risk_df.empty else [],
+            "benchmark": allocations.get("benchmark_comparison", {}),
+            "assets": assets_list,
+            "report": report,
+            "model": model_name,
+            "has_api_key": bool(analyzer.api_key)
+        }
+
+        return JSONResponse(content=response_data)
+
+    except ValueError as e:
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": f"CAS Parser Error: {str(e)}"}
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": f"An error occurred during CAS parsing: {str(e)}"}
         )
 
 @app.get("/api/auth/kite/login")
@@ -399,7 +528,8 @@ async def analyze_holdings(
     x_model: Optional[str] = Header("gpt-4o-mini"),
     x_api_key: Optional[str] = Header(None),
     x_base_url: Optional[str] = Header(None),
-    user_id: int = Depends(get_current_user_id)
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
 ):
     try:
         data = await request.json()
@@ -445,6 +575,30 @@ async def analyze_holdings(
         assets_list = portfolio_df.copy()
         assets_list["Percentage"] = (assets_list["Current Value"] / total_val) * 100
         assets_list = assets_list.fillna("").to_dict(orient="records")
+
+        # Automatically overwrite the portfolio holdings in the database
+        sub = db.query(UserSubscription).filter(UserSubscription.user_id == user_id).first()
+        if not sub:
+            user = db.query(User).filter(User.id == user_id).first()
+            sub = UserSubscription(
+                user_id=user_id,
+                email=user.email if user else "",
+                is_active=False,
+                model=model_name,
+                api_key=x_api_key
+            )
+            db.add(sub)
+            db.commit()
+            db.refresh(sub)
+            
+        portfolio = db.query(UserPortfolio).filter(UserPortfolio.subscription_id == sub.id).first()
+        if not portfolio:
+            portfolio = UserPortfolio(subscription_id=sub.id, holdings_json=assets_list)
+            db.add(portfolio)
+        else:
+            portfolio.holdings_json = assets_list
+            
+        db.commit()
 
         response_data = {
             "success": True,

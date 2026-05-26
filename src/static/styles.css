@@ -162,6 +162,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
+    min-width: 0;
 }
 
 /* Glassmorphism Cards */
@@ -597,18 +598,23 @@ body {
     overflow-x: auto;
     border-radius: 10px;
     border: 1px solid var(--border-color);
+    background: rgba(0, 0, 0, 0.15);
+    width: 100%;
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
 }
 
 table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     text-align: left;
 }
 
 th, td {
-    padding: 0.85rem 1.25rem;
+    padding: 0.65rem 0.95rem;
     border-bottom: 1px solid var(--border-color);
+    vertical-align: middle;
 }
 
 th {
@@ -616,7 +622,7 @@ th {
     font-weight: 600;
     color: var(--text-secondary);
     text-transform: uppercase;
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     letter-spacing: 0.05em;
 }
 

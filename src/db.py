@@ -47,6 +47,18 @@ class User(Base):
     # Relationships
     subscription = relationship("UserSubscription", back_populates="user", uselist=False, cascade="all, delete-orphan")
 
+class UserSession(Base):
+    """
+    Stores session tokens persistently in the database so that login persists
+    even across server restarts, worker recyclings, and sleeps.
+    """
+    __tablename__ = "user_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token = Column(String(255), unique=True, index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
 class UserSubscription(Base):
     """
     Tracks email subscriptions for daily agent monitoring and reports.

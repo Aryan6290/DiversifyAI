@@ -1,10 +1,7 @@
 import hashlib
 import secrets
-import os
-from typing import Dict, Optional
-
-# process-wide token session storage
-ACTIVE_SESSIONS: Dict[str, int] = {}
+from typing import Optional
+from db import SessionLocal, UserSession
 
 def generate_salt() -> str:
     """
@@ -28,23 +25,40 @@ def verify_password(password: str, salt: str, password_hash: str) -> bool:
 
 def create_session(user_id: int) -> str:
     """
-    Creates a new active session token and records it in-memory.
+    Creates a new active session token persistently in the database.
     """
     token = secrets.token_hex(32)
-    ACTIVE_SESSIONS[token] = user_id
+    db = SessionLocal()
+    try:
+        session = UserSession(token=token, user_id=user_id)
+        db.add(session)
+        db.commit()
+    finally:
+        db.close()
     return token
 
 def get_user_id_by_session(token: str) -> Optional[int]:
     """
-    Retrieves the user_id associated with a session token.
+    Retrieves the user_id associated with a session token from the database.
     """
-    return ACTIVE_SESSIONS.get(token)
+    db = SessionLocal()
+    try:
+        session = db.query(UserSession).filter(UserSession.token == token).first()
+        return session.user_id if session else None
+    finally:
+        db.close()
 
 def destroy_session(token: str) -> bool:
     """
-    Deletes an active session.
+    Deletes a session persistently from the database.
     """
-    if token in ACTIVE_SESSIONS:
-        del ACTIVE_SESSIONS[token]
-        return True
-    return False
+    db = SessionLocal()
+    try:
+        session = db.query(UserSession).filter(UserSession.token == token).first()
+        if session:
+            db.delete(session)
+            db.commit()
+            return True
+        return False
+    finally:
+        db.close()

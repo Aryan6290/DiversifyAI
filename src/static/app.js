@@ -184,6 +184,8 @@ function Dashboard() {
     const [dragActive, setDragActive] = useState(false);
     const [analyzing, setAnalyzing] = useState(false);
     const [result, setResult] = useState(null);
+    const [password, setPassword] = useState('');
+    const [holdingsTab, setHoldingsTab] = useState('all');
     
     // What-if state
     const [whatIfTicker, setWhatIfTicker] = useState('');
@@ -213,10 +215,12 @@ function Dashboard() {
         risk: useRef(null)
     };
     const chartInstances = useRef({});
+    const hasLoadedInitial = useRef(false);
 
     // Load saved portfolio holdings on mount if user already has one!
     useEffect(() => {
-        if (user.holdings && user.holdings.length > 0) {
+        if (user.holdings && user.holdings.length > 0 && !hasLoadedInitial.current) {
+            hasLoadedInitial.current = true;
             triggerAnalyzeHoldings(user.holdings);
         }
     }, [user.holdings]);
@@ -339,10 +343,11 @@ function Dashboard() {
         setDragActive(false);
         if (e.dataTransfer.files && e.dataTransfer.files[0]) {
             const file = e.dataTransfer.files[0];
-            if (file.name.endsWith('.csv')) {
+            if (file.name.endsWith('.csv') || file.name.endsWith('.pdf')) {
                 setSelectedFile(file);
+                setPassword('');
             } else {
-                alert('Only CSV files are supported!');
+                alert('Only CSV and PDF files are supported!');
             }
         }
     };
@@ -350,6 +355,7 @@ function Dashboard() {
     const handleFileChange = (e) => {
         if (e.target.files && e.target.files[0]) {
             setSelectedFile(e.target.files[0]);
+            setPassword('');
         }
     };
 
@@ -360,8 +366,15 @@ function Dashboard() {
         const formData = new FormData();
         formData.append('file', selectedFile);
 
+        const isPdf = selectedFile.name.endsWith('.pdf');
+        if (isPdf) {
+            formData.append('password', password);
+        }
+
+        const endpoint = isPdf ? '/api/analyze/cas' : '/api/analyze';
+
         try {
-            const res = await fetch('/api/analyze', {
+            const res = await fetch(endpoint, {
                 method: 'POST',
                 headers: getHeaders(),
                 body: formData
@@ -602,6 +615,7 @@ function Dashboard() {
                             <select value=${model} onChange=${(e) => setModel(e.target.value)}>
                                 <option value="gpt-4o-mini">GPT-4o Mini</option>
                                 <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                                <option value="llama-3.3-70b-versatile">Llama 3.3 70B (Groq)</option>
                             </select>
                         </div>
                         <div className="input-group key-group">
@@ -630,7 +644,7 @@ function Dashboard() {
                     <!-- Upload holdings card -->
                     <div className="glass-card upload-card">
                         <h2>Analyze Portfolio</h2>
-                        <p className="card-subtitle">Upload your holdings in CSV format to calculate distributions and invoke the AI Advisor.</p>
+                        <p className="card-subtitle">Upload your holdings in CSV or CDSL CAS PDF format to calculate distributions and invoke the AI Advisor.</p>
                         
                         <div 
                             className=${`dropzone ${dragActive ? 'active' : ''}`}
@@ -643,7 +657,7 @@ function Dashboard() {
                             <input 
                                 type="file" 
                                 id="react-file-input" 
-                                accept=".csv" 
+                                accept=".csv, .pdf" 
                                 className="hidden-file-input" 
                                 onChange=${handleFileChange}
                             />
@@ -652,7 +666,7 @@ function Dashboard() {
                                 <div className="dropzone-content">
                                     <span className="upload-icon">📥</span>
                                     <p className="dropzone-text"><strong className="highlight">Choose a file</strong> or drag it here</p>
-                                    <p className="dropzone-subtext">CSV files only (Holdings table)</p>
+                                    <p className="dropzone-subtext">CSV or CDSL CAS PDF statements</p>
                                 </div>
                             ` : html`
                                 <div className="file-info">
@@ -662,6 +676,32 @@ function Dashboard() {
                                 </div>
                             `}
                         </div>
+
+                        ${selectedFile && selectedFile.name.endsWith('.pdf') && html`
+                            <div className="input-group password-group" style=${{ marginTop: '0.25rem', marginBottom: '1.25rem', animation: 'fadeIn 0.3s ease-out' }}>
+                                <label style=${{ fontSize: '0.8rem', fontWeight: '600', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                    🔒 Enter PDF Password (PAN in Uppercase)
+                                </label>
+                                <input 
+                                    type="password" 
+                                    placeholder="Enter decryption password..." 
+                                    value=${password} 
+                                    onChange=${(e) => setPassword(e.target.value)} 
+                                    style=${{ 
+                                        width: '100%', 
+                                        padding: '0.75rem 1rem', 
+                                        borderRadius: '8px', 
+                                        background: 'rgba(0,0,0,0.25)', 
+                                        border: '1px solid rgba(255,255,255,0.1)', 
+                                        color: 'white', 
+                                        boxSizing: 'border-box', 
+                                        fontFamily: 'inherit',
+                                        fontSize: '0.85rem',
+                                        outline: 'none',
+                                    }}
+                                />
+                            </div>
+                        `}
 
                         <button className="btn btn-primary" onClick=${handleAnalyzeClick} disabled=${!selectedFile || analyzing}>
                             <span>${analyzing ? 'Analyzing holdings...' : 'Analyze Portfolio'}</span>
@@ -868,7 +908,65 @@ function Dashboard() {
 
                         <!-- Table Grid view of raw holdings -->
                         <div className="glass-card holdings-card">
-                            <h2>Portfolio Holdings</h2>
+                            <div style=${{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', gap: '1rem', flexWrap: 'wrap' }}>
+                                <h2>Portfolio Holdings</h2>
+                                <div style=${{ 
+                                    display: 'flex', 
+                                    background: 'rgba(0,0,0,0.25)', 
+                                    padding: '0.25rem', 
+                                    borderRadius: '8px', 
+                                    border: '1px solid rgba(255,255,255,0.05)' 
+                                }}>
+                                    <button 
+                                        onClick=${() => setHoldingsTab('all')}
+                                        style=${{
+                                            padding: '0.4rem 1rem',
+                                            borderRadius: '6px',
+                                            border: 'none',
+                                            background: holdingsTab === 'all' ? 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)' : 'transparent',
+                                            color: holdingsTab === 'all' ? 'white' : '#9ca3af',
+                                            fontWeight: '600',
+                                            fontSize: '0.8rem',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.25s ease'
+                                        }}
+                                    >
+                                        🌐 All (${(result.assets || []).length})
+                                    </button>
+                                    <button 
+                                        onClick=${() => setHoldingsTab('equity')}
+                                        style=${{
+                                            padding: '0.4rem 1rem',
+                                            borderRadius: '6px',
+                                            border: 'none',
+                                            background: holdingsTab === 'equity' ? 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)' : 'transparent',
+                                            color: holdingsTab === 'equity' ? 'white' : '#9ca3af',
+                                            fontWeight: '600',
+                                            fontSize: '0.8rem',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.25s ease'
+                                        }}
+                                    >
+                                        📈 Stocks & ETFs (${(result.assets || []).filter(a => a['Asset Type'] !== 'Mutual Fund').length})
+                                    </button>
+                                    <button 
+                                        onClick=${() => setHoldingsTab('mf')}
+                                        style=${{
+                                            padding: '0.4rem 1rem',
+                                            borderRadius: '6px',
+                                            border: 'none',
+                                            background: holdingsTab === 'mf' ? 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)' : 'transparent',
+                                            color: holdingsTab === 'mf' ? 'white' : '#9ca3af',
+                                            fontWeight: '600',
+                                            fontSize: '0.8rem',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.25s ease'
+                                        }}
+                                    >
+                                        💼 Mutual Funds (${(result.assets || []).filter(a => a['Asset Type'] === 'Mutual Fund').length})
+                                    </button>
+                                </div>
+                            </div>
                             <div className="table-container">
                                 <table>
                                     <thead>
@@ -878,53 +976,114 @@ function Dashboard() {
                                             <th>Sector</th>
                                             <th className="text-right">Avg Buy Price</th>
                                             <th className="text-right">Current Price</th>
-                                            <th className="text-right">Daily Change</th>
+                                            <th className="text-right">Total Profit/Loss</th>
                                             <th className="text-right">Value</th>
                                             <th className="text-right">Allocation</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        ${result.assets && result.assets.map((asset, index) => {
-                                            const buyPrice = asset['Buy Price'] || 0.0;
-                                            const curPrice = asset['Current Price'] || 0.0;
-                                            const prevClose = asset['Previous Close'] || 0.0;
-                                            const priceChange = curPrice - prevClose;
-                                            const changePct = prevClose > 0 ? (priceChange / prevClose) * 100 : 0.0;
-                                            const isUp = priceChange >= 0;
+                                        ${(result.assets || [])
+                                            .filter(asset => {
+                                                if (holdingsTab === 'mf') {
+                                                    return asset['Asset Type'] === 'Mutual Fund';
+                                                } else if (holdingsTab === 'equity') {
+                                                    return asset['Asset Type'] !== 'Mutual Fund';
+                                                }
+                                                return true;
+                                            })
+                                            .sort((a, b) => {
+                                                const valA = a['Current Value'] || 0.0;
+                                                const valB = b['Current Value'] || 0.0;
+                                                return valB - valA;
+                                            })
+                                            .map((asset, index) => {
+                                                const buyPrice = asset['Buy Price'] || 0.0;
+                                                const curPrice = asset['Current Price'] || 0.0;
+                                                const curVal = asset['Current Value'] || 0.0;
+                                                
+                                                let hasPnL = buyPrice > 0 && curPrice > 0 && curVal > 0;
+                                                let totalReturnVal = 0.0;
+                                                let totalReturnPct = 0.0;
+                                                let isUp = true;
+                                                
+                                                if (hasPnL) {
+                                                    const investedVal = buyPrice * (curVal / curPrice);
+                                                    totalReturnVal = curVal - investedVal;
+                                                    totalReturnPct = ((curPrice - buyPrice) / buyPrice) * 100;
+                                                    isUp = totalReturnVal >= 0;
+                                                }
 
-                                            return html`
-                                                <tr key=${index}>
-                                                    <td>${asset['Asset Name']}</td>
-                                                    <td><span className="badge" style=${{ background: 'rgba(99,102,241,0.1)', borderColor: 'rgba(99,102,241,0.2)', color: '#a5b4fc' }}>${asset['Ticker']}</span></td>
-                                                    <td>${asset['Sector']}</td>
-                                                    <td className="text-right" style=${{ color: '#e2e8f0', fontWeight: '500' }}>
-                                                        ${buyPrice > 0 ? formatCurrency(buyPrice) : '--'}
-                                                    </td>
-                                                    <td className="text-right" style=${{ fontWeight: '500' }}>
-                                                        ${curPrice > 0 ? formatCurrency(curPrice) : '--'}
-                                                    </td>
-                                                    <td className="text-right">
-                                                        ${curPrice > 0 ? html`
+                                                return html`
+                                                    <tr key=${index}>
+                                                        <td style=${{ maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title=${asset['Asset Name']}>
+                                                            ${asset['Asset Name']}
+                                                        </td>
+                                                        <td>
                                                             <span 
                                                                 className="badge" 
                                                                 style=${{ 
-                                                                    background: isUp ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', 
-                                                                    borderColor: isUp ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)', 
-                                                                    color: isUp ? '#10b981' : '#ef4444', 
-                                                                    fontWeight: '600' 
+                                                                    background: 'rgba(255, 255, 255, 0.03)', 
+                                                                    border: '1px solid rgba(255, 255, 255, 0.08)', 
+                                                                    color: '#cbd5e1', 
+                                                                    fontFamily: 'SFMono-Regular, Consolas, monospace',
+                                                                    fontSize: '0.72rem',
+                                                                    padding: '0.15rem 0.45rem',
+                                                                    borderRadius: '4px',
+                                                                    display: 'inline-block',
+                                                                    letterSpacing: '0.02em',
+                                                                    boxSizing: 'border-box'
                                                                 }}
                                                             >
-                                                                ${isUp ? '▲' : '▼'} ${isUp ? '+' : ''}${changePct.toFixed(2)}%
+                                                                ${asset['Ticker']}
                                                             </span>
-                                                        ` : html`
-                                                            <span className="badge" style=${{ background: 'rgba(255,255,255,0.05)', color: '#9ca3af' }}>--</span>
-                                                        `}
-                                                    </td>
-                                                    <td className="text-right" style=${{ fontWeight: '500' }}>${formatCurrency(asset['Current Value'])}</td>
-                                                    <td className="text-right" style=${{ color: '#cbd5e1', fontWeight: '600' }}>${asset.Percentage ? `${asset.Percentage.toFixed(1)}%` : '0%'}</td>
-                                                </tr>
-                                            `;
-                                        })}
+                                                        </td>
+                                                        <td>${asset['Sector']}</td>
+                                                        <td className="text-right" style=${{ color: '#e2e8f0', fontWeight: '500' }}>
+                                                            ${buyPrice > 0 ? formatCurrency(buyPrice) : '--'}
+                                                        </td>
+                                                        <td className="text-right" style=${{ fontWeight: '500' }}>
+                                                            ${curPrice > 0 ? formatCurrency(curPrice) : '--'}
+                                                        </td>
+                                                        <td className="text-right">
+                                                            ${hasPnL ? html`
+                                                                <span 
+                                                                    className="badge" 
+                                                                    style=${{ 
+                                                                        background: isUp ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)', 
+                                                                        borderColor: isUp ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)', 
+                                                                        color: isUp ? '#10b981' : '#ef4444', 
+                                                                        fontWeight: '600',
+                                                                        display: 'inline-flex',
+                                                                        alignItems: 'center',
+                                                                        gap: '4px',
+                                                                        padding: '0.2rem 0.55rem',
+                                                                        borderRadius: '6px',
+                                                                        fontSize: '0.75rem',
+                                                                        lineHeight: '1',
+                                                                        boxSizing: 'border-box'
+                                                                    }}
+                                                                >
+                                                                    ${isUp ? html`
+                                                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+                                                                            <polyline points="18 15 12 9 6 15"></polyline>
+                                                                        </svg>
+                                                                    ` : html`
+                                                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+                                                                            <polyline points="6 9 12 15 18 9"></polyline>
+                                                                        </svg>
+                                                                    `}
+                                                                    ${isUp ? '+' : ''}${formatCurrency(totalReturnVal)} (${isUp ? '+' : ''}${totalReturnPct.toFixed(1)}%)
+                                                                </span>
+                                                            ` : html`
+                                                                <span className="badge" style=${{ background: 'rgba(255,255,255,0.05)', color: '#9ca3af' }}>--</span>
+                                                            `}
+                                                        </td>
+                                                        <td className="text-right" style=${{ fontWeight: '500' }}>${formatCurrency(asset['Current Value'])}</td>
+                                                        <td className="text-right" style=${{ color: '#cbd5e1', fontWeight: '600' }}>${asset.Percentage ? `${asset.Percentage.toFixed(1)}%` : '0%'}</td>
+                                                    </tr>
+                                                `;
+                                            })
+                                        }
                                     </tbody>
                                 </table>
                             </div>
